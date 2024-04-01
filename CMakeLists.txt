@@ -61,6 +61,10 @@ target_link_libraries(QtFFmpeg PRIVATE
     ${FFMPEG_DLL_LIST}
 )
 
+set (FFMPEG_HEADERS
+    ${FFMPEG_DLL_PATH}/include
+)
+
 include_directories(${FFMPEG_DLL_PATH}/include)
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

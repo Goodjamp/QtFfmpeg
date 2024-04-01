@@ -3,6 +3,9 @@
 
 #include <QObject>
 #include <QWidget>
+#include <QString>
+#include <QFile>
+#include <QMap>
 
 extern "C" {
     #include <stdint.h>
@@ -23,13 +26,14 @@ typedef enum {
         FFMPEG_ALLOC_CON3_ERROR,
         FFMPEG_OPEN2_ERROR,
         FFMPEG_OPEN_FILE_ERROR,
+        FFMPEG_ALLOC_FRAME_ERROR,
     } FFmpegStatus;
+
     explicit FFmpegDecode(QObject *parent = nullptr);
     const char *getffmpegInfo();
-    FFmpegStatus initDecoder(const char *filename);
+    FFmpegStatus initDecoder(QString fileName);
+    FFmpegStatus closeDecoder();
     FFmpegStatus getFrame();
-
-signals:
 
 private:
     const AVCodec *codec;
@@ -39,6 +43,18 @@ private:
     AVFrame *frame;
     AVPacket *pkt;
 
+    QFile file;
+
+    const QMap<FFmpegDecode::FFmpegStatus, QString> statusToText{
+        {FFMPEG_OK, "FFMPEG_OK"},
+        {FFMPEG_ALLOC_AV_ERROR, "FFMPEG_ALLOC_AV_ERROR"},
+        {FFMPEG_FIND_DECODER_ERROR, "FFMPEG_FIND_DECODER_ERROR"},
+        {FFMPEG_PARSER_INIT_ERROR, "FFMPEG_PARSER_INIT_ERROR"},
+        {FFMPEG_ALLOC_CON3_ERROR, "FFMPEG_ALLOC_CON3_ERROR"},
+        {FFMPEG_OPEN2_ERROR, "FFMPEG_OPEN2_ERROR"},
+        {FFMPEG_OPEN_FILE_ERROR, "FFMPEG_OPEN_FILE_ERROR"},
+        {FFMPEG_ALLOC_FRAME_ERROR, "FFMPEG_ALLOC_FRAME_ERROR"},
+    };
 };
 
 #endif // FFMPEGDECODE_H

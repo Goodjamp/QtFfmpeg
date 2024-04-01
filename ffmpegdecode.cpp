@@ -20,7 +20,7 @@ const char *FFmpegDecode::getffmpegInfo()
     return av_version_info();
 }
 
-FFmpegDecode::FFmpegStatus FFmpegDecode::initDecoder(const char *filename)
+FFmpegDecode::FFmpegStatus FFmpegDecode::initDecoder(QString fileName)
 {
     pkt = av_packet_alloc();
     if (!pkt) {
@@ -35,7 +35,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::initDecoder(const char *filename)
 
     /*
      * Init parcer.
-     * Parcer is used to parse the input video frame by frame.
+     * Parcer is used to parse the input video frame by frame.\
      * Explanation: sometimes we can't read the input (video) file,\
      * because the size of the file is too big. To trick this limitation,
      * we read a small piece of data and push it to the parser. After
@@ -61,18 +61,22 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::initDecoder(const char *filename)
         return FFMPEG_OPEN2_ERROR;
     }
 
-    f = fopen(filename, "rb");
-    if (!f) {
+    file.setFileName(fileName);
+    if (file.open(QIODeviceBase::ReadOnly) == false) {
         return FFMPEG_OPEN_FILE_ERROR;
     }
 
     frame = av_frame_alloc();
     if (!frame) {
-        fprintf(stderr, "Could not allocate video frame\n");
-        exit(1);
+        return FFMPEG_ALLOC_FRAME_ERROR;
     }
 
     return FFMPEG_OK;
+}
+
+FFmpegDecode::FFmpegStatus FFmpegDecode::closeDecoder()
+{
+    file.close();
 }
 
 FFmpegDecode::FFmpegStatus FFmpegDecode::getFrame()
