@@ -62,7 +62,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::initDecoder(QString fileName)
     }
 
     file.setFileName(fileName);
-    if (file.open(QIODeviceBase::ReadOnly) == false) {
+    if (file.open(QIODevice::ReadOnly) == false) {
         return FFMPEG_OPEN_FILE_ERROR;
     }
 
@@ -77,9 +77,11 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::initDecoder(QString fileName)
 FFmpegDecode::FFmpegStatus FFmpegDecode::closeDecoder()
 {
     file.close();
+
+    return FFmpegDecode::FFMPEG_OK;
 }
 
 FFmpegDecode::FFmpegStatus FFmpegDecode::getFrame()
 {
-
+    return FFmpegDecode::FFMPEG_OK;
 }

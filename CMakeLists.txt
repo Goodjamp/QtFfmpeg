@@ -44,28 +44,19 @@ else()
     endif()
 endif()
 
-set(FFMPEG_DLL_PATH
-   D:/Programing/ffmpeg
-)
-
 set(FFMPEG_DLL_LIST
-    ${FFMPEG_DLL_PATH}/bin/avcodec-61.dll
-    ${FFMPEG_DLL_PATH}/bin/avdevice-61.dll
-    ${FFMPEG_DLL_PATH}/bin/avfilter-10.dll
-    ${FFMPEG_DLL_PATH}/bin/avformat-61.dll
-    ${FFMPEG_DLL_PATH}/bin/avutil-59.dll
+    libavcodec.so
+    libavdevice.so
+    libavutil.so
+    libavfilter.so
+    libavformat.so
+    libswresample.so
 )
 
 target_link_libraries(QtFFmpeg PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
     ${FFMPEG_DLL_LIST}
 )
-
-set (FFMPEG_HEADERS
-    ${FFMPEG_DLL_PATH}/include
-)
-
-include_directories(${FFMPEG_DLL_PATH}/include)
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
