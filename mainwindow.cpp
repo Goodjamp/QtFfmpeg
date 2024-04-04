@@ -40,5 +40,6 @@ MainWindow::~MainWindow()
 void MainWindow::pbStartClick(bool click)
 {
     qDebug()<<"Init ffmpeg";
-    decodeItem->initDecoder(this->leFilePath->text());
+    //decodeItem->initDecoder(this->leFilePath->text());
+    decodeItem->connectCamerra();
 }

@@ -81,6 +81,116 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::closeDecoder()
     return FFmpegDecode::FFMPEG_OK;
 }
 
+enum AVPixelFormat getFormat(struct AVCodecContext *s, const enum AVPixelFormat * fmt)
+{
+    const enum AVPixelFormat *fmtLocal = fmt;
+
+    do {
+       qDebug()<<"Propese format = "<<*fmtLocal;
+    } while(*(++fmtLocal) != AV_PIX_FMT_NONE);
+    qDebug()<<"*fmtLocal";
+}
+
+FFmpegDecode::FFmpegStatus FFmpegDecode::connectCamerra(void)
+{
+    avdevice_register_all();
+
+    const char *cameraPath = "/dev/video0";
+    const AVInputFormat *inputFormat = av_find_input_format("v4l2");
+    AVDictionary *options = NULL;
+    AVFormatContext *pAVFormatContext = NULL;
+    const AVCodec *pLocalCodec = NULL;
+    const AVCodecParameters *pCodecParameters = NULL;
+    const AVCodec *pCodec = NULL;
+    AVPacket *pkt = NULL;
+    AVFrame *frame = NULL;
+
+    av_dict_set(&options, "framerate", "2", 0);
+
+    if (avformat_open_input(&pAVFormatContext, cameraPath, inputFormat, &options) != 0 ) {
+        qDebug()<<"Can't connect camera";
+        return FFmpegDecode::FFMPEG_OPEN_FILE_ERROR;
+    } else {
+        qDebug()<<pAVFormatContext->iformat->long_name;
+    }
+
+    if (avformat_find_stream_info(pAVFormatContext, NULL) < 0) {
+        qDebug()<<"Can't find stream";
+        return FFmpegDecode::FFMPEG_FIND_STREAM_ERROR;
+    }
+
+    qDebug()<<"Strems number = "<<pAVFormatContext->nb_streams;
+
+    for (uint32_t k = 0; k < pAVFormatContext->nb_streams; k++) {
+        pCodecParameters = pAVFormatContext->streams[k]->codecpar;
+
+        if (pCodecParameters->codec_type == AVMEDIA_TYPE_VIDEO) {
+                    pLocalCodec = avcodec_find_decoder(pCodecParameters->codec_id);
+            qDebug()<<"Codec name "<<pLocalCodec->long_name;
+            if (pLocalCodec->pix_fmts != NULL) {
+                const AVPixelFormat *pxFormat = pLocalCodec->pix_fmts;
+                do {
+                    qDebug()<<"Pixel format"<<*pxFormat;
+                } while (*(++pxFormat) != AV_PIX_FMT_NONE);
+            } else {
+                qDebug()<<"Pixel format == AV_PIX_FMT_NONE";
+            }
+            qDebug()<<"Codec frame size "<<pCodecParameters->frame_size;
+            qDebug()<<"Codec frame width "<<pCodecParameters->width;
+            qDebug()<<"Codec frame height "<<pCodecParameters->height;
+
+            /*
+             * Video stream was found. Complet serching.
+             */
+            break;
+        }
+    }
+
+    AVCodecContext *pCodecContext = avcodec_alloc_context3(pLocalCodec);
+    if (pCodecContext == NULL) {
+        qDebug()<<"Can't allocate context 3";
+        return FFmpegDecode::FFMPEG_ALLOCATE_CONTEXT3_ERROR;
+    }
+    if (avcodec_parameters_to_context(pCodecContext, pCodecParameters) < 0) {
+        qDebug()<<"Parameter to context error";
+        return FFmpegDecode::FFMPEG_PARAMETRS_TO_CONTEXT_ERROR;
+    }
+     pCodecContext->get_format = getFormat;
+    if (avcodec_open2(pCodecContext, pCodec, NULL) < 0) {
+        qDebug()<<"Open codec error";
+        return FFmpegDecode::FFMPEG_OPEN2_ERROR;
+    }
+
+    pkt = av_packet_alloc();
+    if (pkt == NULL) {
+        qDebug()<<"Can't allk paket";
+        return FFmpegDecode::FFMPEG_ALLOCATE_PKT_ERROR;
+    }
+
+    frame = av_frame_alloc();
+    if (pkt == NULL) {
+        qDebug()<<"Can't allk paket";
+        return FFmpegDecode::FFMPEG_ALLOCATE_FRAME_ERROR;
+    }
+
+    while(av_read_frame(pAVFormatContext, pkt) >= 0) {
+        avcodec_send_packet(pCodecContext, pkt);
+        if (avcodec_receive_frame(pCodecContext, frame) == 0) {
+            qDebug()<<"Frame Format"<<frame->format;
+            qDebug()<<"Frame Height"<<frame->height;
+            qDebug()<<"Frame Width"<<frame->width;
+            qDebug()<<"Frame Width"<<frame->buf[0]->size;
+            qDebug()<<"Frame Type (mpeg 4)"<<frame->pict_type;
+            //AVPixelFormat
+
+            break;
+        }
+    }
+
+    qDebug()<<"Read frame Ok";
+    return FFmpegDecode::FFMPEG_OK;
+}
+
 FFmpegDecode::FFmpegStatus FFmpegDecode::getFrame()
 {
     return FFmpegDecode::FFMPEG_OK;

@@ -27,6 +27,11 @@ typedef enum {
         FFMPEG_OPEN2_ERROR,
         FFMPEG_OPEN_FILE_ERROR,
         FFMPEG_ALLOC_FRAME_ERROR,
+        FFMPEG_FIND_STREAM_ERROR,
+        FFMPEG_ALLOCATE_CONTEXT3_ERROR,
+        FFMPEG_PARAMETRS_TO_CONTEXT_ERROR,
+        FFMPEG_ALLOCATE_PKT_ERROR,
+        FFMPEG_ALLOCATE_FRAME_ERROR,
     } FFmpegStatus;
 
     explicit FFmpegDecode(QObject *parent = nullptr);
@@ -34,6 +39,7 @@ typedef enum {
     FFmpegStatus initDecoder(QString fileName);
     FFmpegStatus closeDecoder();
     FFmpegStatus getFrame();
+    FFmpegStatus connectCamerra();
 
 private:
     const AVCodec *codec;
