@@ -5,6 +5,11 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QLabel>
+#include <QTimer>
+
+#include <stdint.h>
+
 #include "ffmpegdecode.h"
 
 QT_BEGIN_NAMESPACE
@@ -23,6 +28,7 @@ public:
 
 public slots:
     void pbStartClick(bool click);
+    void readFrameTimeoute();
 
 private:
     Ui::MainWindow *ui;
@@ -32,5 +38,10 @@ private:
     QLineEdit *leFilePath;
     QPushButton *pbStart;
     QVBoxLayout *vblL;
+    QLabel *lDisplay;
+    QTimer *framePerioTimer;
+
+    uint32_t imageHeight;
+    uint32_t imageWidth;
 };
 #endif // MAINWINDOW_H

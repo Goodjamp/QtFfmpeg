@@ -41,15 +41,16 @@ typedef enum {
     FFmpegStatus getFrame();
     FFmpegStatus connectCamerra();
 
+    FFmpegStatus readFrame(uint8_t *dstFrame);
+
 private:
     const AVCodec *codec;
     AVCodecParserContext *parser;
     AVCodecContext *c= NULL;
     FILE *f;
-    AVFrame *frame;
-    AVPacket *pkt;
 
     QFile file;
+
 
     const QMap<FFmpegDecode::FFmpegStatus, QString> statusToText{
         {FFMPEG_OK, "FFMPEG_OK"},
@@ -61,6 +62,18 @@ private:
         {FFMPEG_OPEN_FILE_ERROR, "FFMPEG_OPEN_FILE_ERROR"},
         {FFMPEG_ALLOC_FRAME_ERROR, "FFMPEG_ALLOC_FRAME_ERROR"},
     };
+
+
+    const char *cameraPath = "/dev/video0";
+    const AVInputFormat *inputFormat;
+    AVDictionary *options = NULL;
+    AVFormatContext *pAVFormatContext = NULL;
+    const AVCodec *pLocalCodec = NULL;
+    const AVCodecParameters *pCodecParameters = NULL;
+    const AVCodec *pCodec = NULL;
+    AVPacket *pkt = NULL;
+    AVFrame *frame = NULL;
+    AVCodecContext *pCodecContext;
 };
 
 #endif // FFMPEGDECODE_H

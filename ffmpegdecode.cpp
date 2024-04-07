@@ -11,8 +11,8 @@ FFmpegDecode::FFmpegDecode(QObject *parent) : QObject(parent)
     qDebug()<<"Video version"<<avutil_license();
     qDebug()<<"Video version"<<av_version_info();
 
-    const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_H264);
-    qDebug()<<"Codec name"<<codec->long_name;
+   //const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_H264);
+    //qDebug()<<"Codec name"<<codec->long_name;
 }
 
 const char *FFmpegDecode::getffmpegInfo()
@@ -91,21 +91,11 @@ enum AVPixelFormat getFormat(struct AVCodecContext *s, const enum AVPixelFormat 
     qDebug()<<"*fmtLocal";
 }
 
-FFmpegDecode::FFmpegStatus FFmpegDecode::connectCamerra(void)
+FFmpegDecode::FFmpegStatus FFmpegDecode::connectCamerra()
 {
     avdevice_register_all();
-
-    const char *cameraPath = "/dev/video0";
-    const AVInputFormat *inputFormat = av_find_input_format("v4l2");
-    AVDictionary *options = NULL;
-    AVFormatContext *pAVFormatContext = NULL;
-    const AVCodec *pLocalCodec = NULL;
-    const AVCodecParameters *pCodecParameters = NULL;
-    const AVCodec *pCodec = NULL;
-    AVPacket *pkt = NULL;
-    AVFrame *frame = NULL;
-
-    av_dict_set(&options, "framerate", "2", 0);
+    inputFormat = av_find_input_format("v4l2");
+    av_dict_set(&options, "framerate", "25", 0);
 
     if (avformat_open_input(&pAVFormatContext, cameraPath, inputFormat, &options) != 0 ) {
         qDebug()<<"Can't connect camera";
@@ -146,7 +136,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::connectCamerra(void)
         }
     }
 
-    AVCodecContext *pCodecContext = avcodec_alloc_context3(pLocalCodec);
+    pCodecContext = avcodec_alloc_context3(pLocalCodec);
     if (pCodecContext == NULL) {
         qDebug()<<"Can't allocate context 3";
         return FFmpegDecode::FFMPEG_ALLOCATE_CONTEXT3_ERROR;
@@ -173,25 +163,30 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::connectCamerra(void)
         return FFmpegDecode::FFMPEG_ALLOCATE_FRAME_ERROR;
     }
 
-    while(av_read_frame(pAVFormatContext, pkt) >= 0) {
-        avcodec_send_packet(pCodecContext, pkt);
-        if (avcodec_receive_frame(pCodecContext, frame) == 0) {
-            qDebug()<<"Frame Format"<<frame->format;
-            qDebug()<<"Frame Height"<<frame->height;
-            qDebug()<<"Frame Width"<<frame->width;
-            qDebug()<<"Frame Width"<<frame->buf[0]->size;
-            qDebug()<<"Frame Type (mpeg 4)"<<frame->pict_type;
-            //AVPixelFormat
-
-            break;
-        }
-    }
-
     qDebug()<<"Read frame Ok";
     return FFmpegDecode::FFMPEG_OK;
 }
 
-FFmpegDecode::FFmpegStatus FFmpegDecode::getFrame()
+FFmpegDecode::FFmpegStatus FFmpegDecode::readFrame(uint8_t *dstFrame)
 {
+    while(av_read_frame(pAVFormatContext, pkt) >= 0) {
+        avcodec_send_packet(pCodecContext, pkt);
+        if (avcodec_receive_frame(pCodecContext, frame) == 0) {
+            //qDebug()<<"Frame Format"<<frame->format;
+            //qDebug()<<"Frame Height"<<frame->height;
+            //qDebug()<<"Frame Width"<<frame->width;
+            //qDebug()<<"Frame Width"<<frame->buf[0]->size;
+            //qDebug()<<"Frame Type (mpeg 4)"<<frame->pict_type;
+            /*
+             * Take a luminos data. On the YUV422 the luminouse is eac 2-th byte
+             */
+            for (uint32_t k = 0; k < 640 * 480 * 2; k += 2) {
+                *dstFrame++ = frame->buf[0]->data[k];
+            }
+            //qDebug()<<"Copy ok";
+            break;
+
+        }
+    }
     return FFmpegDecode::FFMPEG_OK;
 }
