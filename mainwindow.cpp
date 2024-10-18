@@ -6,9 +6,7 @@
 #include <QImage>
 #include <QPixmap>
 #include <QThread>
-
-#define IMAGE_HEIGHT    480
-#define IMAGE_WIDTH     640
+#include <QFile>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -31,10 +29,6 @@ MainWindow::MainWindow(QWidget *parent)
     pbStart->setText("START");
 
     lDisplay = new QLabel();
-
-    lDisplay->resize(QSize(320, 240));
-    imageHeight = IMAGE_HEIGHT;
-    imageWidth = IMAGE_WIDTH;
 
     vblL = new QVBoxLayout();
     centralWidget()->setLayout(vblL);
@@ -59,17 +53,20 @@ void MainWindow::pbStartClick(bool click)
     qDebug()<<"Init ffmpeg";
     //decodeItem->initDecoder(this->leFilePath->text());
     decodeItem->connectCamerra();
+    //decodeItem->connectToFile();
+    lDisplay->resize(decodeItem->getFrameSize());
 
-    framePerioTimer->setInterval(20);
+    framePerioTimer->setInterval(1000/30);
     framePerioTimer->start();
 }
 
 void MainWindow::readFrameTimeoute()
 {
-    uint8_t imageBuff[IMAGE_HEIGHT * IMAGE_WIDTH * 3];
+    QSize frameSize = decodeItem->getFrameSize();
+    uint8_t imageBuff[ frameSize.width() * frameSize.height()];
     QPixmap frame;
 
     decodeItem->readFrame(imageBuff);
-    frame = QPixmap::fromImage(QImage(imageBuff, imageWidth, imageHeight, QImage::Format_Grayscale8));
+    frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
     lDisplay->setPixmap(frame);
 }

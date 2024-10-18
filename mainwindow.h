@@ -40,8 +40,5 @@ private:
     QVBoxLayout *vblL;
     QLabel *lDisplay;
     QTimer *framePerioTimer;
-
-    uint32_t imageHeight;
-    uint32_t imageWidth;
 };
 #endif // MAINWINDOW_H

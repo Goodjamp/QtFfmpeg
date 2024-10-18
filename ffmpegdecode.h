@@ -40,8 +40,10 @@ typedef enum {
     FFmpegStatus closeDecoder();
     FFmpegStatus getFrame();
     FFmpegStatus connectCamerra();
+    FFmpegStatus connectToFile();
 
     FFmpegStatus readFrame(uint8_t *dstFrame);
+    QSize getFrameSize();
 
 private:
     const AVCodec *codec;
@@ -65,15 +67,20 @@ private:
 
 
     const char *cameraPath = "/dev/video0";
+    const char *filePath = "/home/oleksandr/Downloads/mp4Test.mp4";
     const AVInputFormat *inputFormat;
     AVDictionary *options = NULL;
     AVFormatContext *pAVFormatContext = NULL;
+
+    AVCodecContext *pCodecContext;
     const AVCodec *pLocalCodec = NULL;
     const AVCodecParameters *pCodecParameters = NULL;
     const AVCodec *pCodec = NULL;
+
     AVPacket *pkt = NULL;
     AVFrame *frame = NULL;
-    AVCodecContext *pCodecContext;
+
+    int videoStreamInd;
 };
 
 #endif // FFMPEGDECODE_H
