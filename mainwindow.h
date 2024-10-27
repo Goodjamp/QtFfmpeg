@@ -27,7 +27,9 @@ public:
     ~MainWindow();
 
 public slots:
-    void pbStartClick(bool click);
+    void pbCameraPlayClick(bool click);
+    void pbFilePlayClick(bool click);
+    void pbCameraRecordClick(bool click);
     void readFrameTimeoute();
 
 private:
@@ -36,7 +38,9 @@ private:
     FFmpegDecode *decodeItem;
 
     QLineEdit *leFilePath;
-    QPushButton *pbStart;
+    QPushButton *pbCameraPlay;
+    QPushButton *pbFilePlay;
+    QPushButton *pbCameraRecord;
     QVBoxLayout *vblL;
     QLabel *lDisplay;
     QTimer *framePerioTimer;
