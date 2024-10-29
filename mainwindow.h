@@ -30,9 +30,16 @@ public slots:
     void pbCameraPlayClick(bool click);
     void pbFilePlayClick(bool click);
     void pbCameraRecordClick(bool click);
+    void pbStopClick(bool click);
     void readFrameTimeoute();
 
 private:
+    typedef enum {
+        CAMERA_PLAY,
+        FILE_PLAY,
+        CAMERA_RECORD,
+    } ActivityType;
+
     Ui::MainWindow *ui;
 
     FFmpegDecode *decodeItem;
@@ -41,8 +48,11 @@ private:
     QPushButton *pbCameraPlay;
     QPushButton *pbFilePlay;
     QPushButton *pbCameraRecord;
+    QPushButton *pbStop;
     QVBoxLayout *vblL;
     QLabel *lDisplay;
     QTimer *framePerioTimer;
+    bool isRun = false;
+    ActivityType activityType;
 };
 #endif // MAINWINDOW_H

@@ -43,6 +43,7 @@ set(FFMPEG_DLL_LIST
     libavfilter.so
     libavformat.so
     libswresample.so
+    libswscale.so
 )
 
 target_link_libraries(QtFFmpeg PRIVATE

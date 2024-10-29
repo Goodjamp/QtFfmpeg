@@ -7,11 +7,15 @@
 #include <QFile>
 #include <QMap>
 
+
+
 extern "C" {
     #include <stdint.h>
+    #include <stdio.h>
     #include "libavcodec/avcodec.h"
     #include "libavdevice/avdevice.h"
     #include "libavutil/avutil.h"
+    #include "libswscale/swscale.h"
 }
 
 class FFmpegDecode : public QObject
@@ -27,6 +31,7 @@ typedef enum {
         FFMPEG_OPEN_INPUT_PATH_STREAM_ERROR,
         FFMPEG_FIND_INPUT_STREAM_ERROR,
         FFMPEG_FIND_VIDE_STREAM_ERROR,
+        FFMPEG_FRAME_GET_BUFF_ERROR,
 
 
         FFMPEG_FIND_DECODER_ERROR,
@@ -44,14 +49,19 @@ typedef enum {
 
     explicit FFmpegDecode(QObject *parent = nullptr);
     const char *getffmpegInfo();
-    FFmpegStatus closeDecoder();
     FFmpegStatus getFrame();
-    FFmpegStatus connectCamerra();
-    FFmpegStatus connectToFile();
-    FFmpegStatus saveCameraStream(QString outFileName);
+    FFmpegStatus camerraPlay();
+    FFmpegStatus filePlay();
+    FFmpegStatus cameraRecord(QString outFileName);
 
     FFmpegStatus readFrame(uint8_t *dstFrame);
     QSize getFrameSize();
+    void encode(uint8_t *dstFrame);
+
+    int main();
+    void encodeTest(AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile);
+
+    void stopVideo();
 
 private:
 
@@ -72,11 +82,15 @@ private:
     AVPacket *pkt = NULL;
     AVFrame *frame = NULL;
 
+    AVFrame *frameEncode = NULL;
+    AVPacket *pktEncode = NULL;
+
     int videoStreamInd;
 
     const char *cameraPath = "/dev/video0";
-    const char *filePath = "/home/oleksandr/Downloads/52_jumps.avi";
-    QFile file;
+    const char *filePath = "/home/oleksandr/Programing/SW/FFmpeg/test.mp4";
+    QFile cameraRecFile;
+    FILE *f;
 
     const QMap<FFmpegDecode::FFmpegStatus, QString> statusToText{
         {FFMPEG_OK, "FFMPEG_OK"},

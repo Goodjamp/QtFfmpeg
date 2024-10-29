@@ -40,6 +40,13 @@ MainWindow::MainWindow(QWidget *parent)
     pbCameraRecord->setMaximumSize(1000, 30);
     pbCameraRecord->setText("Camera record");
 
+
+    pbStop = new QPushButton(this);
+    pbStop->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    pbStop->setMinimumSize(0, 30);
+    pbStop->setMaximumSize(1000, 30);
+    pbStop->setText("Stop");
+
     lDisplay = new QLabel();
 
     vblL = new QVBoxLayout();
@@ -48,14 +55,16 @@ MainWindow::MainWindow(QWidget *parent)
     vblL->insertWidget(1, pbCameraPlay);
     vblL->insertWidget(2, pbFilePlay);
     vblL->insertWidget(3, pbCameraRecord);
-    vblL->insertWidget(4, lDisplay);
-    vblL->insertSpacerItem(5, new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
+     vblL->insertWidget(4, pbStop);
+    vblL->insertWidget(5, lDisplay);
+    vblL->insertSpacerItem(6, new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
     framePerioTimer = new QTimer(this);
 
     connect(pbCameraPlay, &QPushButton::clicked, this, &MainWindow::pbCameraPlayClick);
     connect(pbFilePlay, &QPushButton::clicked, this, &MainWindow::pbFilePlayClick);
     connect(pbCameraRecord, &QPushButton::clicked, this, &MainWindow::pbCameraRecordClick);
+    connect(pbStop, &QPushButton::clicked, this, &MainWindow::pbStopClick);
     connect(framePerioTimer, &QTimer::timeout, this, &MainWindow::readFrameTimeoute);
 }
 
@@ -66,22 +75,22 @@ MainWindow::~MainWindow()
 
 void MainWindow::pbCameraPlayClick(bool click)
 {
-    qDebug()<<"Init ffmpeg";
-    //decodeItem->initDecoder(this->leFilePath->text());
-    decodeItem->connectCamerra();
+    activityType = CAMERA_PLAY;
+    decodeItem->camerraPlay();
     lDisplay->resize(decodeItem->getFrameSize());
 
+    isRun = true;
     framePerioTimer->setInterval(1000/30);
     framePerioTimer->start();
 }
 
 void MainWindow::pbFilePlayClick(bool click)
 {
-    qDebug()<<"Init ffmpeg";
-    //decodeItem->initDecoder(this->leFilePath->text());
-    decodeItem->connectToFile();
+    activityType = FILE_PLAY;
+    decodeItem->filePlay();
     lDisplay->resize(decodeItem->getFrameSize());
 
+    isRun = true;
     framePerioTimer->setInterval(1000/30);
     framePerioTimer->start();
 }
@@ -89,20 +98,43 @@ void MainWindow::pbFilePlayClick(bool click)
 void MainWindow::pbCameraRecordClick(bool click)
 {
     qDebug()<<"Init ffmpeg";
-    decodeItem->saveCameraStream("/home/oleksandr/camera.mpg4");
-    lDisplay->resize(decodeItem->getFrameSize());
+    decodeItem->cameraRecord("/home/oleksandr/camera.mpg4");
+    activityType = CAMERA_RECORD;
+    //decodeItem->main();
+    //lDisplay->resize(decodeItem->getFrameSize());
 
+    isRun = true;
     framePerioTimer->setInterval(1000/30);
     framePerioTimer->start();
 }
 
+
+void MainWindow::pbStopClick(bool click)
+{
+    isRun = false;
+}
+
 void MainWindow::readFrameTimeoute()
 {
-    QSize frameSize = decodeItem->getFrameSize();
-    uint8_t imageBuff[ frameSize.width() * frameSize.height()];
-    QPixmap frame;
+    if (isRun == true) {
+        QSize frameSize = decodeItem->getFrameSize();
+        uint8_t imageBuff[ frameSize.width() * frameSize.height()];
+        QPixmap frame;
 
-    decodeItem->readFrame(imageBuff);
-    frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
-    lDisplay->setPixmap(frame);
+        switch(activityType) {
+        case CAMERA_PLAY:
+        case FILE_PLAY:
+            decodeItem->readFrame(imageBuff);
+            break;
+
+        case CAMERA_RECORD:
+            decodeItem->encode(imageBuff);
+            break;
+        }
+
+        frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
+        lDisplay->setPixmap(frame);
+    } else {
+
+    }
 }

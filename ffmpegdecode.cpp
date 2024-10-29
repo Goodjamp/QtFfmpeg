@@ -1,30 +1,28 @@
 #include <QDebug>
 
+extern "C" {
+    #include "stdio.h"
+}
+
 #include "ffmpegdecode.h"
 
 #define INBUF_SIZE 4096
 
+void logCb(void* ptr, int logLevel, const char* errorStr, va_list vaList)
+{
+    qDebug()<<errorStr;
+}
+
 FFmpegDecode::FFmpegDecode(QObject *parent) : QObject(parent)
 {
-
     qDebug()<<"Video version"<<avutil_version();
     qDebug()<<"Video version"<<avutil_license();
     qDebug()<<"Video version"<<av_version_info();
-
-   //const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_H264);
-    //qDebug()<<"Codec name"<<codec->long_name;
 }
 
 const char *FFmpegDecode::getffmpegInfo()
 {
     return av_version_info();
-}
-
-FFmpegDecode::FFmpegStatus FFmpegDecode::closeDecoder()
-{
-    file.close();
-
-    return FFmpegDecode::FFMPEG_OK;
 }
 
 /*
@@ -55,7 +53,7 @@ enum AVPixelFormat getFormat(struct AVCodecContext *s, const enum AVPixelFormat 
  * - encode frame to the HD264 stream
  * - save stream to the output file
  */
-FFmpegDecode::FFmpegStatus FFmpegDecode::saveCameraStream(QString outFileName)
+FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QString outFileName)
 {
     QFile outFile(outFileName);
     outFile.open(QIODevice::ReadWrite);
@@ -63,12 +61,15 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::saveCameraStream(QString outFileName)
     avdevice_register_all();
 
     /*
-     * To encode the camera stream we need to now the pixel format that will be return by the decoder. So that, first we need to find decoder for the camera stream
+     * To encode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
      */
+    int width = 640;
+    int height = 480;
+    std::string resolution = (QString::number(width) + "x" + QString::number(height)).toStdString();
 
-    inputFormat = av_find_input_format("v4l2"); // video for linux (v4l2) input camera format
+    inputFormat = av_find_input_format("v4l2"); // video for linux (v4l2) camera outputformat
     av_dict_set(&dictionaryOptions, "framerate", "30", 0);
-    av_dict_set(&dictionaryOptions, "video_size", "320x240",  0);
+    av_dict_set(&dictionaryOptions, "video_size", resolution.c_str(),  0);
 
     if (avformat_open_input(&formatContext, cameraPath, inputFormat, &dictionaryOptions) != 0 ) {
         qDebug()<<"Can't connect camera";
@@ -114,7 +115,6 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::saveCameraStream(QString outFileName)
             qDebug()<<"Parameter to context error";
             return FFmpegDecode::FFMPEG_PARAMETRS_TO_CONTEXT_ERROR;
         }
-        codecDecodeContext->get_format = getFormat;
 
         if (avcodec_open2(codecDecodeContext, codecDecode, NULL) < 0) {
             qDebug()<<"Open codec error";
@@ -127,7 +127,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::saveCameraStream(QString outFileName)
     /*
      * Create and configure encoder
      */
-    codecEncode= avcodec_find_decoder(AV_CODEC_ID_H264); // Find the codec by ID. Also we can find codec by the name with function avcodec_find_decoder_by_name(), for example "H264-MPEG-4"
+    codecEncode= avcodec_find_encoder(AV_CODEC_ID_H264); // Find the codec by ID. Also we can find codec by the name with function avcodec_find_decoder_by_name(), for example "H264-MPEG-4"
     if (codecEncode == 0) {
         qDebug()<<"Can't find H264 encoder";
         return FFmpegDecode::FFMPEG_FIND_CODEC_DECODER_ERROR;
@@ -142,8 +142,8 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::saveCameraStream(QString outFileName)
     /* put sample parameters */
     codecEncodeContext->bit_rate = 400000;
     /* resolution must be a multiple of two */
-    codecEncodeContext->width = 320;
-    codecEncodeContext->height = 240;
+    codecEncodeContext->width = width;
+    codecEncodeContext->height = height;
     /* frames per second */
     codecEncodeContext->time_base = (AVRational){1, 25};
     codecEncodeContext->framerate = (AVRational){25, 1};
@@ -155,14 +155,18 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::saveCameraStream(QString outFileName)
      * will always be I frame irrespective to gop_size
      */
     codecEncodeContext->gop_size = 10;
-    codecEncodeContext->max_b_frames = 1;
+    codecEncodeContext->max_b_frames = 0;
 
     /*
-     * pix_fmt - it is a format of frame pased to encoder. We need to take this information from the source of video data (camera)
+     * The HD265 required the YUV420 input format
      */
-    qDebug()<<"Pix format sw: "<<codecDecodeContext->sw_pix_fmt;
-    qDebug()<<"Pix format hw: "<<codecDecodeContext->pix_fmt;
-    codecEncodeContext->pix_fmt = codecDecodeContext->pix_fmt;
+    codecEncodeContext->pix_fmt = AV_PIX_FMT_YUV420P;
+
+    /*
+     * Apply one of the standart preset
+     */
+    if (codecEncode->id == AV_CODEC_ID_H264)
+        av_opt_set(codecEncodeContext->priv_data, "preset", "slow", 0);
 
     /*
      * Initilise the context with settings and oprions fron pass to the last arg.
@@ -174,7 +178,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::saveCameraStream(QString outFileName)
     }
 
     /*
-     *   Init reading containers
+     * Init container for the camera stream
      */
     pkt = av_packet_alloc();
     if (pkt == NULL) {
@@ -182,16 +186,143 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::saveCameraStream(QString outFileName)
         return FFmpegDecode::FFMPEG_ALLOCATE_PKT_ERROR;
     }
 
+    /*
+     * Init frame for Decode
+     */
     frame = av_frame_alloc();
     if (pkt == NULL) {
         qDebug()<<"Can't allk paket";
         return FFmpegDecode::FFMPEG_ALLOCATE_FRAME_ERROR;
     }
 
+    /*
+     * Init container for the encoder
+     */
+    pktEncode = av_packet_alloc();
+    if (pkt == NULL) {
+        qDebug()<<"Can't allk paket";
+        return FFmpegDecode::FFMPEG_ALLOCATE_PKT_ERROR;
+    }
+
+    /*
+     * Init frame for Encode
+     */
+    frameEncode = av_frame_alloc();
+    if (pkt == NULL) {
+        qDebug()<<"Can't allk paket";
+        return FFmpegDecode::FFMPEG_ALLOCATE_FRAME_ERROR;
+    }
+    frameEncode->format = codecEncodeContext->pix_fmt;
+    frameEncode->width = codecEncodeContext->width;
+    frameEncode->height = codecEncodeContext->height;
+
+    if (av_frame_get_buffer(frameEncode, 0) < 0) {
+        qDebug()<<"Could not allocate the video frame data";
+        return FFmpegDecode::FFMPEG_FRAME_GET_BUFF_ERROR;
+    }
+
+    /*
+     * Prepare file to record camera stream
+     */
+    const char filename[] = "/home/oleksandr/Programing/SW/FFmpeg/test.mp4";
+    f = fopen(filename, "wb");
+    if (!f) {
+        fprintf(stderr, "Could not open %s\n", filename);
+        exit(1);
+    }
+
+    //cameraRecFile.setFileName("/home/oleksandr/Programing/SW/FFmpeg/test.mp4");
+    //cameraRecFile.open(QIODevice::WriteOnly);
+
     return FFmpegDecode::FFMPEG_OK;
 }
 
-FFmpegDecode::FFmpegStatus FFmpegDecode::connectToFile()
+void FFmpegDecode::encode(uint8_t *dstFrame)
+{
+    int ret = 0;
+    static uint32_t pts = 0;
+    int i, x, y;
+
+    while(av_read_frame(formatContext, pkt) >= 0) { // read stream
+        if (pkt->stream_index == videoStreamInd) {
+            ret  = avcodec_send_packet(codecDecodeContext, pkt); // send (pass) encodet data to the codec driver
+            if (ret < 0) {
+                qDebug()<<"Error submitting a packet for decoding"<<av_err2str(ret);
+                return; //FFmpegDecode::FFMPEG_OK;
+            }
+            if (avcodec_receive_frame(codecDecodeContext, frame) == 0) {
+                //qDebug()<<"Is open" << avcodec_is_open(codecEncodeContext);
+
+                /*
+                 * The HD264 encoder expected strongly YUV420 input format with the frame rezolution equal to the
+                 * encoder context. We set target camera rezolution upper. But we can't set
+                 * the format of the camera output. That is why if the farme format is not the YUV420, we must
+                 * convert it to YUV420.
+                 */
+                if (frame->format != AV_PIX_FMT_YUV420P) {
+                    /*
+                     * use sws scale library to convert the for mat of the frame
+                     */
+                    SwsContext *swScaleContext = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format,
+                                                                frameEncode->width, frameEncode->height, (AVPixelFormat)frameEncode->format,
+                                                                0, NULL, NULL, NULL);
+                    if ((ret = sws_scale_frame(swScaleContext, frameEncode, frame)) < 0) {
+                        qDebug()<<"Convert frame error";
+                        return;
+                    }
+                }
+                memcpy(dstFrame, frameEncode->data[0], frameEncode->width * frameEncode->height);
+
+
+                frameEncode->pts = pts++;
+                //frameEncode->pkt_dts = ++pts % 25;
+                ret = avcodec_send_frame(codecEncodeContext, frameEncode);
+                if (ret < 0) {
+                    qDebug() <<"Error sending a frame to the encoder: "<<av_err2str(ret)<< "   " <<frameEncode->pts<<frameEncode;
+                }
+                while (ret >= 0) {
+                    ret = avcodec_receive_packet(codecEncodeContext, pktEncode);
+                    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+                        return;
+                    else if (ret < 0) {
+                        fprintf(stderr, "Error during encoding\n");
+                        exit(1);
+                    }
+                    //QByteArray temp = QByteArray::fromRawData((const char *)pkt->data, pkt->size);
+                    //cameraRecFile.write(temp);
+                    fwrite(pktEncode->data, 1, pktEncode->size, f);
+                    av_packet_unref(pktEncode);
+                }
+                //break;
+            }
+        }
+    }
+    return;// FFmpegDecode::FFMPEG_OK;
+}
+
+void FFmpegDecode::stopVideo()
+{
+    /*
+     * flush the video stream
+     */
+
+    /* flush the encoder */
+    //encodeTest(c, NULL, pkt, f);
+
+    /* Add sequence end code to have a real MPEG file.
+       It makes only sense because this tiny examples writes packets
+       directly. This is called "elementary stream" and only works for some
+       codecs. To create a valid file, you usually need to write packets
+       into a proper file format or protocol; see mux.c.
+     */
+    /*
+    if (codecEncode->id == AV_CODEC_ID_MPEG1VIDEO || codecEncode->id->id == AV_CODEC_ID_MPEG2VIDEO)
+        fwrite(endcode, 1, sizeof(endcode), f);
+    */
+    fclose(f);
+}
+
+FFmpegDecode::FFmpegStatus FFmpegDecode::filePlay()
 {
     avdevice_register_all();
 
@@ -272,7 +403,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::connectToFile()
     return FFmpegDecode::FFMPEG_OK;
 }
 
-FFmpegDecode::FFmpegStatus FFmpegDecode::connectCamerra()
+FFmpegDecode::FFmpegStatus FFmpegDecode::camerraPlay()
 {
     avdevice_register_all();
     inputFormat = av_find_input_format("v4l2");
@@ -354,6 +485,10 @@ QSize FFmpegDecode::getFrameSize()
 FFmpegDecode::FFmpegStatus FFmpegDecode::readFrame(uint8_t *dstFrame)
 {
     int ret = 0;
+
+    /*
+     * Read frame from the video stream
+     */
     while(av_read_frame(formatContext, pkt) >= 0) { // read stream
 
         /*
@@ -372,25 +507,10 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::readFrame(uint8_t *dstFrame)
                 //qDebug()<<"Frame Width"<<frame->buf[0]->size;
                 //qDebug()<<"Frame Type (mpeg 4)"<<frame->pict_type;
 
-                if (frame->format == 13 || frame->format == 12) {
-                    /*
-                     * Take a luminos data. On the YUV420
-                     */
-                    int linIndex = 0;
-                    for (uint32_t k = 0; k < frame->width * frame->height; k += 1) {
-                        if (k == linIndex * frame->width + linIndex) {
-                            linIndex++;
-                            *dstFrame++ = 255;
-                        } else {
-                           *dstFrame++ = frame->buf[0]->data[k];
-                        }
-                    }
-                } else {
-                    for (uint32_t k = 0; k < frame->width * frame->height * 2; k += 2) {
-                        *dstFrame++ = frame->buf[0]->data[k];
-                    }
-                }
-
+                /*
+                 * Copy luminos data. On the YUV420
+                 */
+                memcpy(dstFrame, frame->data[0], frame->width * frame->height);
                 break;
 
             }
