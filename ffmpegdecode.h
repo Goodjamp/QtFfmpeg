@@ -48,20 +48,18 @@ typedef enum {
     } FFmpegStatus;
 
     explicit FFmpegDecode(QObject *parent = nullptr);
-    const char *getffmpegInfo();
-    FFmpegStatus getFrame();
-    FFmpegStatus camerraPlay();
+    const char *getFfmpegInfo();
+    FFmpegStatus camerraPlay(QSize frameResolution);
     FFmpegStatus filePlay();
-    FFmpegStatus cameraRecord(QString outFileName);
+    FFmpegStatus cameraRecord(QSize frameResolution, QString outFileName);
+    void stopVideo();
+
 
     FFmpegStatus readFrame(uint8_t *dstFrame);
     QSize getFrameSize();
     void encode(uint8_t *dstFrame);
 
-    int main();
-    void encodeTest(AVCodecContext *enc_ctx, AVFrame *frame, AVPacket *pkt, FILE *outfile);
-
-    void stopVideo();
+FFmpegDecode::FFmpegStatus openCameraStream(QSize frameRezolution);
 
 private:
 
@@ -77,7 +75,7 @@ private:
 
     const AVInputFormat *inputFormat;
     AVDictionary *dictionaryOptions = NULL;
-    AVFormatContext *formatContext = NULL;
+    AVFormatContext *rxStreamContext = NULL;
 
     AVPacket *pkt = NULL;
     AVFrame *frame = NULL;

@@ -20,7 +20,7 @@ FFmpegDecode::FFmpegDecode(QObject *parent) : QObject(parent)
     qDebug()<<"Video version"<<av_version_info();
 }
 
-const char *FFmpegDecode::getffmpegInfo()
+const char *FFmpegDecode::getFfmpegInfo()
 {
     return av_version_info();
 }
@@ -45,6 +45,30 @@ enum AVPixelFormat getFormat(struct AVCodecContext *s, const enum AVPixelFormat 
     return AV_PIX_FMT_NONE;
 }
 
+FFmpegDecode::FFmpegStatus FFmpegDecode::openCameraStream(QSize frameResolution)
+{
+
+    std::string resolution = (QString::number(frameResolution.width()) + "x" + QString::number(frameResolution.height())).toStdString();
+
+    inputFormat = av_find_input_format("v4l2"); // video for linux (v4l2) camera outputformat
+    av_dict_set(&dictionaryOptions, "framerate", "30", 0);
+    av_dict_set(&dictionaryOptions, "video_size", resolution.c_str(),  0);
+
+    if (avformat_open_input(&rxStreamContext, cameraPath, inputFormat, &dictionaryOptions) != 0 ) {
+        qDebug()<<"Can't connect camera";
+        return FFmpegDecode::FFMPEG_OPEN_INPUT_PATH_STREAM_ERROR;
+    } else {
+        qDebug()<<rxStreamContext->iformat->long_name;
+    }
+
+    if (avformat_find_stream_info(rxStreamContext, NULL) < 0) {
+        qDebug()<<"Can't find stream";
+        return FFmpegDecode::FFMPEG_FIND_INPUT_STREAM_ERROR;
+    }
+
+    return FFmpegDecode::FFMPEG_OK;
+}
+
 /*
  * The metho is:
  * - capture the video stream from the Web camera
@@ -53,7 +77,7 @@ enum AVPixelFormat getFormat(struct AVCodecContext *s, const enum AVPixelFormat 
  * - encode frame to the HD264 stream
  * - save stream to the output file
  */
-FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QString outFileName)
+FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QString outFileName)
 {
     QFile outFile(outFileName);
     outFile.open(QIODevice::ReadWrite);
@@ -61,37 +85,17 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QString outFileName)
     avdevice_register_all();
 
     /*
-     * To encode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
+     * To decode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
      */
-    int width = 640;
-    int height = 480;
-    std::string resolution = (QString::number(width) + "x" + QString::number(height)).toStdString();
-
-    inputFormat = av_find_input_format("v4l2"); // video for linux (v4l2) camera outputformat
-    av_dict_set(&dictionaryOptions, "framerate", "30", 0);
-    av_dict_set(&dictionaryOptions, "video_size", resolution.c_str(),  0);
-
-    if (avformat_open_input(&formatContext, cameraPath, inputFormat, &dictionaryOptions) != 0 ) {
-        qDebug()<<"Can't connect camera";
-        return FFmpegDecode::FFMPEG_OPEN_INPUT_PATH_STREAM_ERROR;
-    } else {
-        qDebug()<<formatContext->iformat->long_name;
-    }
-
-    if (avformat_find_stream_info(formatContext, NULL) < 0) {
-        qDebug()<<"Can't find stream";
-        return FFmpegDecode::FFMPEG_FIND_INPUT_STREAM_ERROR;
-    }
-
-    qDebug()<<"Strems number = "<<formatContext->nb_streams;
-
-    videoStreamInd = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
+    openCameraStream(frameResolution)
+;
+    videoStreamInd = av_find_best_stream(rxStreamContext, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
 
     /*
      * Find and alocate decoder for the camera stream
      */
     if (videoStreamInd >= 0) {
-        codecDecodeParameters = formatContext->streams[videoStreamInd]->codecpar;
+        codecDecodeParameters = rxStreamContext->streams[videoStreamInd]->codecpar;
         codecDecode = avcodec_find_decoder(codecDecodeParameters->codec_id);
         qDebug()<<"Codec name "<<codecDecode->long_name;
         if (codecDecode->pix_fmts != NULL) {
@@ -139,27 +143,42 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QString outFileName)
         return FFmpegDecode::FFMPEG_ALOCK_CODEC_DECODER_ERROR;
     }
 
+    /*
+     * Structure of the H264 stream is the next
+     *
+     * Stream => GOP_0, GOP_1, GOP_2, ..., GOP_N, ...
+     *
+     * GOP_N => I_B_B_P_B_B_p
+     *
+     * I - picture
+     *
+     * P - picture
+     *
+     * B - picture
+     *
+     * The upper level of the stream is a chain of the GOP.
+     * GOP - (acronim) Groupe Of Pictures
+     * GOP utilizes various types of compressed pictures.
+     * At the head of the GOP is a picture compressed byte of the MPEG algo: I. These pictures are independent from other frames.
+     * P - type calculated as the difference between uncompressed and previous pictures.
+     * B - calculate as an interpolation between the previous P or I pictures and the next P or I pictures.
+     *
+     * FFmpeg allows flexible adjust the GOP:
+     * gop_size - the number of P + B frames between two I frames
+     * max_b_frames - the number of the B frames between I and P frames or P and P frames. If max_b_frames = 0, the H264 does not include B frames. If max_b_frames = 0, gop_size = it is the number of P frames.
+     * pix_fmt - the HD265 required the YUV420 input format, which is why it must be equal to AV_PIX_FMT_YUV420P
+     */
+
+    /* resolution must be a multiple of two */
+    codecEncodeContext->width = frameResolution.width();
+    codecEncodeContext->height = frameResolution.height();
+    /* frames per second */
     /* put sample parameters */
     codecEncodeContext->bit_rate = 400000;
-    /* resolution must be a multiple of two */
-    codecEncodeContext->width = width;
-    codecEncodeContext->height = height;
-    /* frames per second */
-    codecEncodeContext->time_base = (AVRational){1, 25};
-    codecEncodeContext->framerate = (AVRational){25, 1};
-
-    /* emit one intra frame every ten frames
-     * check frame pict_type before passing frame
-     * to encoder, if frame->pict_type is AV_PICTURE_TYPE_I
-     * then gop_size is ignored and the output of encoder
-     * will always be I frame irrespective to gop_size
-     */
-    codecEncodeContext->gop_size = 10;
-    codecEncodeContext->max_b_frames = 0;
-
-    /*
-     * The HD265 required the YUV420 input format
-     */
+    codecEncodeContext->time_base = (AVRational){1, 30}; // It is a base time unit for the encoder: 1/30 of the seconds OR 1000 / 30 ms. In this units wil ba calculate frame->pts and frame dts
+    codecEncodeContext->framerate = (AVRational){30, 1};
+    codecEncodeContext->gop_size = 2;
+    codecEncodeContext->max_b_frames = 1;
     codecEncodeContext->pix_fmt = AV_PIX_FMT_YUV420P;
 
     /*
@@ -224,15 +243,8 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QString outFileName)
     /*
      * Prepare file to record camera stream
      */
-    const char filename[] = "/home/oleksandr/Programing/SW/FFmpeg/test.mp4";
-    f = fopen(filename, "wb");
-    if (!f) {
-        fprintf(stderr, "Could not open %s\n", filename);
-        exit(1);
-    }
-
-    //cameraRecFile.setFileName("/home/oleksandr/Programing/SW/FFmpeg/test.mp4");
-    //cameraRecFile.open(QIODevice::WriteOnly);
+    cameraRecFile.setFileName(filePath);
+    cameraRecFile.open(QIODevice::WriteOnly);
 
     return FFmpegDecode::FFMPEG_OK;
 }
@@ -243,7 +255,7 @@ void FFmpegDecode::encode(uint8_t *dstFrame)
     static uint32_t pts = 0;
     int i, x, y;
 
-    while(av_read_frame(formatContext, pkt) >= 0) { // read stream
+    while(av_read_frame(rxStreamContext, pkt) >= 0) { // read stream
         if (pkt->stream_index == videoStreamInd) {
             ret  = avcodec_send_packet(codecDecodeContext, pkt); // send (pass) encodet data to the codec driver
             if (ret < 0) {
@@ -275,7 +287,6 @@ void FFmpegDecode::encode(uint8_t *dstFrame)
 
 
                 frameEncode->pts = pts++;
-                //frameEncode->pkt_dts = ++pts % 25;
                 ret = avcodec_send_frame(codecEncodeContext, frameEncode);
                 if (ret < 0) {
                     qDebug() <<"Error sending a frame to the encoder: "<<av_err2str(ret)<< "   " <<frameEncode->pts<<frameEncode;
@@ -288,9 +299,8 @@ void FFmpegDecode::encode(uint8_t *dstFrame)
                         fprintf(stderr, "Error during encoding\n");
                         exit(1);
                     }
-                    //QByteArray temp = QByteArray::fromRawData((const char *)pkt->data, pkt->size);
-                    //cameraRecFile.write(temp);
-                    fwrite(pktEncode->data, 1, pktEncode->size, f);
+                    QByteArray temp = QByteArray::fromRawData((const char *)pktEncode->data, pktEncode->size);
+                    cameraRecFile.write(temp);
                     av_packet_unref(pktEncode);
                 }
                 //break;
@@ -319,7 +329,7 @@ void FFmpegDecode::stopVideo()
     if (codecEncode->id == AV_CODEC_ID_MPEG1VIDEO || codecEncode->id->id == AV_CODEC_ID_MPEG2VIDEO)
         fwrite(endcode, 1, sizeof(endcode), f);
     */
-    fclose(f);
+    cameraRecFile.close();
 }
 
 FFmpegDecode::FFmpegStatus FFmpegDecode::filePlay()
@@ -329,27 +339,27 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::filePlay()
     /*
      * Open source of input data
      */
-    if (avformat_open_input(&formatContext, filePath, NULL, NULL) != 0 ) {
+    if (avformat_open_input(&rxStreamContext, filePath, NULL, NULL) != 0 ) {
         qDebug()<<"Can't connect file";
         return FFmpegDecode::FFMPEG_OPEN_FILE_ERROR;
     } else {
-        qDebug()<<formatContext->iformat->long_name;
+        qDebug()<<rxStreamContext->iformat->long_name;
     }
 
-    if (avformat_find_stream_info(formatContext, NULL) < 0) {
+    if (avformat_find_stream_info(rxStreamContext, NULL) < 0) {
         qDebug()<<"Can't find stream";
         return FFmpegDecode::FFMPEG_FIND_STREAM_ERROR;
     }
 
-    qDebug()<<"Strems number = "<<formatContext->nb_streams;
+    qDebug()<<"Strems number = "<<rxStreamContext->nb_streams;
 
     /*
      * The video container could contain multiple multimedia stream.
      * Take a index of video stream and found a suitable decoder
      */
-    videoStreamInd = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
+    videoStreamInd = av_find_best_stream(rxStreamContext, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
     if (videoStreamInd >= 0) {
-        codecDecodeParameters = formatContext->streams[videoStreamInd]->codecpar;
+        codecDecodeParameters = rxStreamContext->streams[videoStreamInd]->codecpar;
         codecDecode = avcodec_find_decoder(codecDecodeParameters->codec_id);
 
         qDebug()<<"Codec name "<<codecDecode->long_name;
@@ -403,30 +413,18 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::filePlay()
     return FFmpegDecode::FFMPEG_OK;
 }
 
-FFmpegDecode::FFmpegStatus FFmpegDecode::camerraPlay()
+FFmpegDecode::FFmpegStatus FFmpegDecode::camerraPlay(QSize frameResolution)
 {
     avdevice_register_all();
-    inputFormat = av_find_input_format("v4l2");
-    av_dict_set(&dictionaryOptions, "framerate", "30", 0);
-    av_dict_set(&dictionaryOptions, "video_size", "320x240",  0);
 
-    if (avformat_open_input(&formatContext, cameraPath, inputFormat, &dictionaryOptions) != 0 ) {
-        qDebug()<<"Can't connect camera";
-        return FFmpegDecode::FFMPEG_OPEN_FILE_ERROR;
-    } else {
-        qDebug()<<formatContext->iformat->long_name;
-    }
+    /*
+     * To decode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
+     */
+    openCameraStream(frameResolution);
 
-    if (avformat_find_stream_info(formatContext, NULL) < 0) {
-        qDebug()<<"Can't find stream";
-        return FFmpegDecode::FFMPEG_FIND_STREAM_ERROR;
-    }
-
-    qDebug()<<"Strems number = "<<formatContext->nb_streams;
-
-    videoStreamInd = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
+    videoStreamInd = av_find_best_stream(rxStreamContext, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
     if (videoStreamInd >= 0) {
-        codecDecodeParameters = formatContext->streams[videoStreamInd]->codecpar;
+        codecDecodeParameters = rxStreamContext->streams[videoStreamInd]->codecpar;
         codecDecode = avcodec_find_decoder(codecDecodeParameters->codec_id);
         qDebug()<<"Codec name "<<codecDecode->long_name;
         if (codecDecode->pix_fmts != NULL) {
@@ -475,11 +473,11 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::camerraPlay()
 
 QSize FFmpegDecode::getFrameSize()
 {
-    if (formatContext == NULL) {
+    if (rxStreamContext == NULL) {
         return QSize(0,0);
     }
-    return QSize(formatContext->streams[videoStreamInd]->codecpar->width,
-                 formatContext->streams[videoStreamInd]->codecpar->height);
+    return QSize(rxStreamContext->streams[videoStreamInd]->codecpar->width,
+                 rxStreamContext->streams[videoStreamInd]->codecpar->height);
 }
 
 FFmpegDecode::FFmpegStatus FFmpegDecode::readFrame(uint8_t *dstFrame)
@@ -489,7 +487,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::readFrame(uint8_t *dstFrame)
     /*
      * Read frame from the video stream
      */
-    while(av_read_frame(formatContext, pkt) >= 0) { // read stream
+    while(av_read_frame(rxStreamContext, pkt) >= 0) { // read stream
 
         /*
          * Decode only video stream
@@ -510,7 +508,16 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::readFrame(uint8_t *dstFrame)
                 /*
                  * Copy luminos data. On the YUV420
                  */
-                memcpy(dstFrame, frame->data[0], frame->width * frame->height);
+                AVFrame *frameConvert;
+                SwsContext *swsContext  = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format,
+                                                         frame->width, frame->height, AV_PIX_FMT_RGB24,
+                                                         0, NULL, NULL, NULL);
+                frameConvert = av_frame_alloc();
+                sws_scale_frame(swsContext, frameConvert,frame);
+                memcpy(dstFrame, frameConvert->buf[0]->data, frame->width * frame->height * 3);//frameConvert->buf[0]->size);
+                av_frame_free(&frameConvert);
+                sws_freeContext(swsContext);
+
                 break;
 
             }

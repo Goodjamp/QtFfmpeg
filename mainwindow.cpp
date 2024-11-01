@@ -76,7 +76,7 @@ MainWindow::~MainWindow()
 void MainWindow::pbCameraPlayClick(bool click)
 {
     activityType = CAMERA_PLAY;
-    decodeItem->camerraPlay();
+    decodeItem->camerraPlay(QSize(320, 240));
     lDisplay->resize(decodeItem->getFrameSize());
 
     isRun = true;
@@ -98,7 +98,7 @@ void MainWindow::pbFilePlayClick(bool click)
 void MainWindow::pbCameraRecordClick(bool click)
 {
     qDebug()<<"Init ffmpeg";
-    decodeItem->cameraRecord("/home/oleksandr/camera.mpg4");
+    decodeItem->cameraRecord(QSize(320, 240), "/home/oleksandr/camera.mpg4");
     activityType = CAMERA_RECORD;
     //decodeItem->main();
     //lDisplay->resize(decodeItem->getFrameSize());
@@ -118,21 +118,22 @@ void MainWindow::readFrameTimeoute()
 {
     if (isRun == true) {
         QSize frameSize = decodeItem->getFrameSize();
-        uint8_t imageBuff[ frameSize.width() * frameSize.height()];
+        uint8_t imageBuff[ frameSize.width() * frameSize.height() * 3];
         QPixmap frame;
 
         switch(activityType) {
         case CAMERA_PLAY:
         case FILE_PLAY:
             decodeItem->readFrame(imageBuff);
+            frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_RGB888));
             break;
 
         case CAMERA_RECORD:
             decodeItem->encode(imageBuff);
+            frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
             break;
         }
 
-        frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
         lDisplay->setPixmap(frame);
     } else {
 
