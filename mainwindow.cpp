@@ -40,6 +40,12 @@ MainWindow::MainWindow(QWidget *parent)
     pbCameraRecord->setMaximumSize(1000, 30);
     pbCameraRecord->setText("Camera record");
 
+    pbStreamNetwork = new QPushButton(this);
+    pbStreamNetwork->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    pbStreamNetwork->setMinimumSize(0, 30);
+    pbStreamNetwork->setMaximumSize(1000, 30);
+    pbStreamNetwork->setText("Strem network");
+
 
     pbStop = new QPushButton(this);
     pbStop->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -55,7 +61,8 @@ MainWindow::MainWindow(QWidget *parent)
     vblL->insertWidget(1, pbCameraPlay);
     vblL->insertWidget(2, pbFilePlay);
     vblL->insertWidget(3, pbCameraRecord);
-     vblL->insertWidget(4, pbStop);
+    vblL->insertWidget(4, pbStreamNetwork);
+    vblL->insertWidget(5, pbStop);
     vblL->insertWidget(5, lDisplay);
     vblL->insertSpacerItem(6, new QSpacerItem(0, 0, QSizePolicy::Minimum, QSizePolicy::Expanding));
 
@@ -64,6 +71,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(pbCameraPlay, &QPushButton::clicked, this, &MainWindow::pbCameraPlayClick);
     connect(pbFilePlay, &QPushButton::clicked, this, &MainWindow::pbFilePlayClick);
     connect(pbCameraRecord, &QPushButton::clicked, this, &MainWindow::pbCameraRecordClick);
+    connect(pbStreamNetwork, &QPushButton::clicked, this, &MainWindow::pbStreamNetworkClick);
     connect(pbStop, &QPushButton::clicked, this, &MainWindow::pbStopClick);
     connect(framePerioTimer, &QTimer::timeout, this, &MainWindow::readFrameTimeoute);
 }
@@ -108,6 +116,18 @@ void MainWindow::pbCameraRecordClick(bool click)
     framePerioTimer->start();
 }
 
+void MainWindow::pbStreamNetworkClick(bool click)
+{
+    qDebug()<<"Init network stream";
+    decodeItem->cameraSreamNetwork(QSize(320, 240));
+    activityType = STREAM_NETWORK;
+    //decodeItem->main();
+    //lDisplay->resize(decodeItem->getFrameSize());
+
+    isRun = true;
+    framePerioTimer->setInterval(1000/30);
+    framePerioTimer->start();
+}
 
 void MainWindow::pbStopClick(bool click)
 {
@@ -129,6 +149,11 @@ void MainWindow::readFrameTimeoute()
             break;
 
         case CAMERA_RECORD:
+            decodeItem->encode(imageBuff);
+            frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
+            break;
+
+        case STREAM_NETWORK:
             decodeItem->encode(imageBuff);
             frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
             break;

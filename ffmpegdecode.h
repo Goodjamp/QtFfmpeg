@@ -33,6 +33,10 @@ typedef enum {
         FFMPEG_FIND_VIDE_STREAM_ERROR,
         FFMPEG_FRAME_GET_BUFF_ERROR,
 
+        FFMPEG_RTS_ALLOC_CONTEXT_ERROR,
+        FFMPEG_RTS_ALLOC_CONTEXT_NULL_ERROR,
+        FFMPEG_RTS_CREATE_STREAM_ERROR,
+        FFMPEG_RTS_OPEN_STREAM_ERROR,
 
         FFMPEG_FIND_DECODER_ERROR,
         FFMPEG_PARSER_INIT_ERROR,
@@ -52,14 +56,13 @@ typedef enum {
     FFmpegStatus camerraPlay(QSize frameResolution);
     FFmpegStatus filePlay();
     FFmpegStatus cameraRecord(QSize frameResolution, QString outFileName);
+    FFmpegStatus cameraSreamNetwork(QSize frameResolution);
     void stopVideo();
 
 
     FFmpegStatus readFrame(uint8_t *dstFrame);
     QSize getFrameSize();
     void encode(uint8_t *dstFrame);
-
-FFmpegDecode::FFmpegStatus openCameraStream(QSize frameRezolution);
 
 private:
 
@@ -75,6 +78,7 @@ private:
 
     const AVInputFormat *inputFormat;
     AVDictionary *dictionaryOptions = NULL;
+    //It is a stream from the any type of source: camera, file or any other
     AVFormatContext *rxStreamContext = NULL;
 
     AVPacket *pkt = NULL;
@@ -100,6 +104,12 @@ private:
         {FFMPEG_OPEN_FILE_ERROR, "FFMPEG_OPEN_FILE_ERROR"},
         {FFMPEG_ALLOC_FRAME_ERROR, "FFMPEG_ALLOC_FRAME_ERROR"},
     };
+
+    FFmpegDecode::FFmpegStatus openEncoder(QSize frameResolution);
+    FFmpegDecode::FFmpegStatus openDecoder();
+    FFmpegDecode::FFmpegStatus openInputCameraStream(QSize frameRezolution);
+    FFmpegDecode::FFmpegStatus openOutputRtspStream(const char *url);
+
 };
 
 #endif // FFMPEGDECODE_H

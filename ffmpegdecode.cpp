@@ -45,9 +45,11 @@ enum AVPixelFormat getFormat(struct AVCodecContext *s, const enum AVPixelFormat 
     return AV_PIX_FMT_NONE;
 }
 
-FFmpegDecode::FFmpegStatus FFmpegDecode::openCameraStream(QSize frameResolution)
+/*
+ * Typicaly linux returb v4l2 video stream
+ */
+FFmpegDecode::FFmpegStatus FFmpegDecode::openInputCameraStream(QSize frameResolution)
 {
-
     std::string resolution = (QString::number(frameResolution.width()) + "x" + QString::number(frameResolution.height())).toStdString();
 
     inputFormat = av_find_input_format("v4l2"); // video for linux (v4l2) camera outputformat
@@ -70,25 +72,55 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::openCameraStream(QSize frameResolution)
 }
 
 /*
- * The metho is:
- * - capture the video stream from the Web camera
- * - decode it to the frame
- * - - show freame on the screen
- * - encode frame to the HD264 stream
- * - save stream to the output file
+ * Typicaly linux returb v4l2 video stream
+ * 1 - allocate context for output!!
+ * 2 - create new stream with using context
+ * 3 - open stream for writing
  */
-FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QString outFileName)
+FFmpegDecode::FFmpegStatus FFmpegDecode::openOutputRtspStream(const char *url)
 {
-    QFile outFile(outFileName);
-    outFile.open(QIODevice::ReadWrite);
+    AVFormatContext *txRtspStreamContext = NULL;
+    AVStream *txRtspStream = NULL;
+    int result;
 
-    avdevice_register_all();
+    result = avformat_alloc_output_context2(&txRtspStreamContext, NULL, "rtsp", url);
 
-    /*
-     * To decode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
-     */
-    openCameraStream(frameResolution)
-;
+    if (result < 0) {
+        qDebug()<<"Alloc output rtsp context error: "<<result;
+        return FFmpegDecode::FFMPEG_RTS_ALLOC_CONTEXT_ERROR;
+    }
+
+    if (txRtspStreamContext == NULL) {
+        qDebug()<<"Alloc output rtsp context null error";
+        return FFmpegDecode::FFMPEG_RTS_ALLOC_CONTEXT_NULL_ERROR;
+    }
+
+    txRtspStream = avformat_new_stream(txRtspStreamContext, NULL);
+
+    if (txRtspStream == NULL) {
+        qDebug()<<"Alloc output rtsp stream create error";
+        return FFmpegDecode::FFMPEG_RTS_CREATE_STREAM_ERROR;
+    }
+
+    result = avio_open(&txRtspStreamContext->pb, url, AVIO_FLAG_WRITE);
+
+    if(result < 0) {
+        qDebug()<<"Can't open rtsp vido out: "<< result;
+        return FFmpegDecode::FFMPEG_RTS_OPEN_STREAM_ERROR;
+    }
+
+    return FFmpegDecode::FFMPEG_OK;
+}
+
+/*
+ * 1 - find the sub video stream index on the input stream
+ * 2 - Find decoder for the stream under the index
+ * 3 - Alocate memory for the decoder context
+ * 4 - Copy decoder parameters to the context
+ * 5 - Open decoder
+ */
+FFmpegDecode::FFmpegStatus FFmpegDecode::openDecoder()
+{
     videoStreamInd = av_find_best_stream(rxStreamContext, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
 
     /*
@@ -128,6 +160,15 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QSt
         return FFmpegDecode::FFMPEG_FIND_VIDE_STREAM_ERROR;
     }
 
+    return FFmpegDecode::FFMPEG_OK;
+}
+
+/*
+ * Open H264 encoder
+ *
+ */
+FFmpegDecode::FFmpegStatus FFmpegDecode:: openEncoder(QSize frameResolution)
+{
     /*
      * Create and configure encoder
      */
@@ -182,10 +223,11 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QSt
     codecEncodeContext->pix_fmt = AV_PIX_FMT_YUV420P;
 
     /*
-     * Apply one of the standart preset
+     * Apply one of the standart preset for the HD. This preset desribe at the HD264 standart
      */
-    if (codecEncode->id == AV_CODEC_ID_H264)
+    if (codecEncode->id == AV_CODEC_ID_H264) {
         av_opt_set(codecEncodeContext->priv_data, "preset", "slow", 0);
+    }
 
     /*
      * Initilise the context with settings and oprions fron pass to the last arg.
@@ -196,7 +238,32 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QSt
         return FFmpegDecode::FFMPEG_OPEN_CODEC_DECODER_ERROR;
     }
 
+    return FFmpegDecode::FFMPEG_OK;
+
+}
+
+/*
+ * The method is:
+ * - capture the video stream from the Web camera
+ * - decode it to the frame
+ * - - show freame on the screen
+ * - encode frame to the HD264 stream
+ * - save stream to the output file
+ */
+FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QString outFileName)
+{
+    QFile outFile(outFileName);
+    outFile.open(QIODevice::ReadWrite);
+
+    avdevice_register_all();
+
     /*
+     * To decode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
+     */
+    openInputCameraStream(frameResolution);
+    openDecoder();
+    openEncoder(frameResolution);
+   /*
      * Init container for the camera stream
      */
     pkt = av_packet_alloc();
@@ -249,6 +316,83 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QSt
     return FFmpegDecode::FFMPEG_OK;
 }
 
+/*
+ * The method is:
+ * - capture the video stream from the Web camera
+ * - decode it to the frame
+ * - - show freame on the screen
+ * - encode frame to the HD264 stream
+ * - create RTSP server and send stream
+ */
+FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(QSize frameResolution)
+{
+    const char *url = "rtsp://192.168.31.112/test";
+    int result;
+    FFmpegStatus ffmpegResult;
+
+    avdevice_register_all();
+    /*
+     * The ffmpeg say that this calling is unnesesary. It only need to support old version of GnuTLS or OpenSSL libraries
+     */
+    result = avformat_network_init();
+
+    /*
+     * To decode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
+     */
+    openInputCameraStream(frameResolution);
+    openDecoder();
+    openEncoder(frameResolution);
+    if ((ffmpegResult = openOutputRtspStream(url)) != FFmpegDecode::FFMPEG_OK) {
+        return ffmpegResult;
+    }
+
+    /*
+     * Init container for the camera stream
+     */
+    pkt = av_packet_alloc();
+    if (pkt == NULL) {
+        qDebug()<<"Can't allk paket";
+        return FFmpegDecode::FFMPEG_ALLOCATE_PKT_ERROR;
+    }
+
+    /*
+     * Init frame for Decode
+     */
+    frame = av_frame_alloc();
+    if (pkt == NULL) {
+        qDebug()<<"Can't allk paket";
+        return FFmpegDecode::FFMPEG_ALLOCATE_FRAME_ERROR;
+    }
+
+    /*
+     * Init container for the encoder (*packet* in terms of ffmpeg)
+     */
+    pktEncode = av_packet_alloc();
+    if (pkt == NULL) {
+        qDebug()<<"Can't allk paket";
+        return FFmpegDecode::FFMPEG_ALLOCATE_PKT_ERROR;
+    }
+
+    /*
+     * Init frame for Encode
+     */
+    frameEncode = av_frame_alloc();
+    if (pkt == NULL) {
+        qDebug()<<"Can't allk paket";
+        return FFmpegDecode::FFMPEG_ALLOCATE_FRAME_ERROR;
+    }
+    frameEncode->format = codecEncodeContext->pix_fmt;
+    frameEncode->width = codecEncodeContext->width;
+    frameEncode->height = codecEncodeContext->height;
+
+    if (av_frame_get_buffer(frameEncode, 0) < 0) {
+        qDebug()<<"Could not allocate the video frame data";
+        return FFmpegDecode::FFMPEG_FRAME_GET_BUFF_ERROR;
+    }
+
+    return FFmpegDecode::FFMPEG_OK;
+}
+
 void FFmpegDecode::encode(uint8_t *dstFrame)
 {
     int ret = 0;
@@ -268,12 +412,13 @@ void FFmpegDecode::encode(uint8_t *dstFrame)
                 /*
                  * The HD264 encoder expected strongly YUV420 input format with the frame rezolution equal to the
                  * encoder context. We set target camera rezolution upper. But we can't set
-                 * the format of the camera output. That is why if the farme format is not the YUV420, we must
+                 * the format of the camera output (typicaly linux return V4l2 stream). That is why if the farame format is not the YUV420, we must
                  * convert it to YUV420.
                  */
                 if (frame->format != AV_PIX_FMT_YUV420P) {
                     /*
-                     * use sws scale library to convert the for mat of the frame
+                     *  Use the sws_scale library to convert the frame from the input type (in case of linux it is V4l2) to the H264 compatible (YUV420) format.
+                     *  The *scale* meaning change not only size, but also format.
                      */
                     SwsContext *swScaleContext = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format,
                                                                 frameEncode->width, frameEncode->height, (AVPixelFormat)frameEncode->format,
@@ -287,6 +432,11 @@ void FFmpegDecode::encode(uint8_t *dstFrame)
 
 
                 frameEncode->pts = pts++;
+
+                /*
+                 * Encode YUV420 frame to the H264 packet
+                 * Usualy ffmpeg use two call to encode: send_frame, receive_packet
+                 */
                 ret = avcodec_send_frame(codecEncodeContext, frameEncode);
                 if (ret < 0) {
                     qDebug() <<"Error sending a frame to the encoder: "<<av_err2str(ret)<< "   " <<frameEncode->pts<<frameEncode;
@@ -303,7 +453,7 @@ void FFmpegDecode::encode(uint8_t *dstFrame)
                     cameraRecFile.write(temp);
                     av_packet_unref(pktEncode);
                 }
-                //break;
+                break;
             }
         }
     }
@@ -420,40 +570,9 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::camerraPlay(QSize frameResolution)
     /*
      * To decode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
      */
-    openCameraStream(frameResolution);
 
-    videoStreamInd = av_find_best_stream(rxStreamContext, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
-    if (videoStreamInd >= 0) {
-        codecDecodeParameters = rxStreamContext->streams[videoStreamInd]->codecpar;
-        codecDecode = avcodec_find_decoder(codecDecodeParameters->codec_id);
-        qDebug()<<"Codec name "<<codecDecode->long_name;
-        if (codecDecode->pix_fmts != NULL) {
-            const AVPixelFormat *pxFormat = codecDecode->pix_fmts;
-            do {
-                qDebug()<<"Pixel format"<<*pxFormat;
-            } while (*(++pxFormat) != AV_PIX_FMT_NONE);
-        } else {
-            qDebug()<<"Pixel format == AV_PIX_FMT_NONE";
-        }
-        qDebug()<<"Codec frame size "<<codecDecodeParameters->frame_size;
-        qDebug()<<"Codec frame width "<<codecDecodeParameters->width;
-        qDebug()<<"Codec frame height "<<codecDecodeParameters->height;
-    }
-
-    codecDecodeContext = avcodec_alloc_context3(codecDecode);
-    if (codecDecodeContext == NULL) {
-        qDebug()<<"Can't allocate context 3";
-        return FFmpegDecode::FFMPEG_ALLOCATE_CONTEXT3_ERROR;
-    }
-    if (avcodec_parameters_to_context(codecDecodeContext, codecDecodeParameters) < 0) {
-        qDebug()<<"Parameter to context error";
-        return FFmpegDecode::FFMPEG_PARAMETRS_TO_CONTEXT_ERROR;
-    }
-    codecDecodeContext->get_format = getFormat;
-    if (avcodec_open2(codecDecodeContext, codecDecode, NULL) < 0) {
-        qDebug()<<"Open codec error";
-        return FFmpegDecode::FFMPEG_OPEN2_ERROR;
-    }
+    openInputCameraStream(frameResolution);
+    openDecoder();
 
     pkt = av_packet_alloc();
     if (pkt == NULL) {

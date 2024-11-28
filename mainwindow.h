@@ -32,12 +32,14 @@ public slots:
     void pbCameraRecordClick(bool click);
     void pbStopClick(bool click);
     void readFrameTimeoute();
+    void pbStreamNetworkClick(bool click);
 
 private:
     typedef enum {
         CAMERA_PLAY,
         FILE_PLAY,
         CAMERA_RECORD,
+        STREAM_NETWORK,
     } ActivityType;
 
     Ui::MainWindow *ui;
@@ -48,6 +50,7 @@ private:
     QPushButton *pbCameraPlay;
     QPushButton *pbFilePlay;
     QPushButton *pbCameraRecord;
+    QPushButton *pbStreamNetwork;
     QPushButton *pbStop;
     QVBoxLayout *vblL;
     QLabel *lDisplay;
