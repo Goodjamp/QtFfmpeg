@@ -154,7 +154,7 @@ void MainWindow::readFrameTimeoute()
             break;
 
         case STREAM_NETWORK:
-            decodeItem->encode(imageBuff);
+            decodeItem->streamRtp(imageBuff);
             frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
             break;
         }

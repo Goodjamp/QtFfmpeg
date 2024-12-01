@@ -33,10 +33,11 @@ typedef enum {
         FFMPEG_FIND_VIDE_STREAM_ERROR,
         FFMPEG_FRAME_GET_BUFF_ERROR,
 
-        FFMPEG_RTS_ALLOC_CONTEXT_ERROR,
-        FFMPEG_RTS_ALLOC_CONTEXT_NULL_ERROR,
-        FFMPEG_RTS_CREATE_STREAM_ERROR,
-        FFMPEG_RTS_OPEN_STREAM_ERROR,
+        FFMPEG_RTP_ALLOC_CONTEXT_ERROR,
+        FFMPEG_RTP_ALLOC_CONTEXT_NULL_ERROR,
+        FFMPEG_RTP_CREATE_STREAM_ERROR,
+        FFMPEG_RTP_OPEN_STREAM_ERROR,
+        FFMPEG_RTP_WRITE_HEADR_ERROR,
 
         FFMPEG_FIND_DECODER_ERROR,
         FFMPEG_PARSER_INIT_ERROR,
@@ -63,6 +64,7 @@ typedef enum {
     FFmpegStatus readFrame(uint8_t *dstFrame);
     QSize getFrameSize();
     void encode(uint8_t *dstFrame);
+    void streamRtp(uint8_t *dstFrame);
 
 private:
 
@@ -80,6 +82,9 @@ private:
     AVDictionary *dictionaryOptions = NULL;
     //It is a stream from the any type of source: camera, file or any other
     AVFormatContext *rxStreamContext = NULL;
+
+    // RTP stream context
+    AVFormatContext *txRtpStreamContext = NULL;
 
     AVPacket *pkt = NULL;
     AVFrame *frame = NULL;
@@ -108,7 +113,7 @@ private:
     FFmpegDecode::FFmpegStatus openEncoder(QSize frameResolution);
     FFmpegDecode::FFmpegStatus openDecoder();
     FFmpegDecode::FFmpegStatus openInputCameraStream(QSize frameRezolution);
-    FFmpegDecode::FFmpegStatus openOutputRtspStream(const char *url);
+    FFmpegDecode::FFmpegStatus openOutputRtpStream(const char *url);
 
 };
 

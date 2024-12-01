@@ -71,42 +71,83 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::openInputCameraStream(QSize frameResolu
     return FFmpegDecode::FFMPEG_OK;
 }
 
+#define FFMPEG_ERROR(err)                          \
+    if ((err) < 0) {                               \
+       char errBuff[152];                          \
+       av_strerror(err, errBuff, sizeof(errBuff)); \
+       qDebug()<<errBuff;                          \
+    }
+
 /*
  * Typicaly linux returb v4l2 video stream
  * 1 - allocate context for output!!
  * 2 - create new stream with using context
  * 3 - open stream for writing
  */
-FFmpegDecode::FFmpegStatus FFmpegDecode::openOutputRtspStream(const char *url)
+FFmpegDecode::FFmpegStatus FFmpegDecode::openOutputRtpStream(const char *url)
 {
-    AVFormatContext *txRtspStreamContext = NULL;
-    AVStream *txRtspStream = NULL;
+    AVStream *txRtpStream = NULL;
     int result;
 
-    result = avformat_alloc_output_context2(&txRtspStreamContext, NULL, "rtsp", url);
+    result = avformat_alloc_output_context2(&txRtpStreamContext, NULL, "rtp", url);
+    qDebug()<<"URL: "<<txRtpStreamContext->url;
 
     if (result < 0) {
-        qDebug()<<"Alloc output rtsp context error: "<<result;
-        return FFmpegDecode::FFMPEG_RTS_ALLOC_CONTEXT_ERROR;
+        qDebug()<<"Alloc output rtp context error";
+        FFMPEG_ERROR(result);
+        return FFmpegDecode::FFMPEG_RTP_ALLOC_CONTEXT_ERROR;
     }
 
-    if (txRtspStreamContext == NULL) {
-        qDebug()<<"Alloc output rtsp context null error";
-        return FFmpegDecode::FFMPEG_RTS_ALLOC_CONTEXT_NULL_ERROR;
+    if (txRtpStreamContext == NULL) {
+        qDebug()<<"Alloc output rtp context null error";
+        FFMPEG_ERROR(result);
+        return FFmpegDecode::FFMPEG_RTP_ALLOC_CONTEXT_NULL_ERROR;
     }
 
-    txRtspStream = avformat_new_stream(txRtspStreamContext, NULL);
+    txRtpStream = avformat_new_stream(txRtpStreamContext, NULL);
 
-    if (txRtspStream == NULL) {
+    result = avcodec_parameters_from_context(txRtpStream->codecpar, codecEncodeContext);
+    if(result < 0) {
+        qDebug()<<"Get codec parameters to stream error";
+        FFMPEG_ERROR(result);
+        return FFmpegDecode::FFMPEG_RTP_OPEN_STREAM_ERROR;
+    }
+
+    qDebug()<<"Codec name"<<avcodec_get_name(txRtpStream->codecpar->codec_id);
+    qDebug()<<"Codec frame height"<<txRtpStream->codecpar->height;
+    qDebug()<<"Codec frame width"<<txRtpStream->codecpar->width;
+    qDebug()<<"Codec bit_rate"<<txRtpStream->codecpar->bit_rate;
+
+
+    if (txRtpStream == NULL) {
         qDebug()<<"Alloc output rtsp stream create error";
-        return FFmpegDecode::FFMPEG_RTS_CREATE_STREAM_ERROR;
+        return FFmpegDecode::FFMPEG_RTP_CREATE_STREAM_ERROR;
     }
 
-    result = avio_open(&txRtspStreamContext->pb, url, AVIO_FLAG_WRITE);
+    /*
+     * As I understand, thiis flag tell coddec add some header to each video packet. We need it becouse we
+     * push the video packet to rtp stream. The additional information on the head of the packet help the
+     * rtp client to decode packets on the correct order.
+     */
+    if (txRtpStreamContext->oformat->flags & AVFMT_GLOBALHEADER) {
+        codecEncodeContext->flags |=  AV_CODEC_FLAG_GLOBAL_HEADER;
+        qDebug()<<"Coddec need to add global header to the packets";
+    }
+
+    result = avio_open(&txRtpStreamContext->pb, url, AVIO_FLAG_WRITE);
+
 
     if(result < 0) {
-        qDebug()<<"Can't open rtsp vido out: "<< result;
-        return FFmpegDecode::FFMPEG_RTS_OPEN_STREAM_ERROR;
+        qDebug()<<"Open rtp video out error";
+        FFMPEG_ERROR(result);
+        return FFmpegDecode::FFMPEG_RTP_OPEN_STREAM_ERROR;
+    }
+
+    result = avformat_write_header(txRtpStreamContext, NULL);
+    if (result < 0) {
+        qDebug()<<"Write output headr error";
+        FFMPEG_ERROR(result);
+        return FFmpegDecode::FFMPEG_RTP_WRITE_HEADR_ERROR;
     }
 
     return FFmpegDecode::FFMPEG_OK;
@@ -216,9 +257,9 @@ FFmpegDecode::FFmpegStatus FFmpegDecode:: openEncoder(QSize frameResolution)
     /* frames per second */
     /* put sample parameters */
     codecEncodeContext->bit_rate = 400000;
-    codecEncodeContext->time_base = (AVRational){1, 30}; // It is a base time unit for the encoder: 1/30 of the seconds OR 1000 / 30 ms. In this units wil ba calculate frame->pts and frame dts
-    codecEncodeContext->framerate = (AVRational){30, 1};
-    codecEncodeContext->gop_size = 2;
+    codecEncodeContext->time_base = (AVRational){1, 25}; // It is a base time unit for the encoder: 1/30 of the seconds OR 1000 / 30 ms. In this units wil ba calculate frame->pts and frame dts
+    codecEncodeContext->framerate = (AVRational){25, 1};
+    codecEncodeContext->gop_size = 12;
     codecEncodeContext->max_b_frames = 1;
     codecEncodeContext->pix_fmt = AV_PIX_FMT_YUV420P;
 
@@ -322,11 +363,11 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QSt
  * - decode it to the frame
  * - - show freame on the screen
  * - encode frame to the HD264 stream
- * - create RTSP server and send stream
+ * - create RTP server and send stream
  */
 FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(QSize frameResolution)
 {
-    const char *url = "rtsp://192.168.31.112/test";
+    const char *url = "rtp://127.0.0.1:5004";
     int result;
     FFmpegStatus ffmpegResult;
 
@@ -342,12 +383,12 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(QSize frameResolutio
     openInputCameraStream(frameResolution);
     openDecoder();
     openEncoder(frameResolution);
-    if ((ffmpegResult = openOutputRtspStream(url)) != FFmpegDecode::FFMPEG_OK) {
+    if ((ffmpegResult = openOutputRtpStream(url)) != FFmpegDecode::FFMPEG_OK) {
         return ffmpegResult;
     }
 
     /*
-     * Init container for the camera stream
+     * Init container (packet) for the camera stream
      */
     pkt = av_packet_alloc();
     if (pkt == NULL) {
@@ -356,7 +397,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(QSize frameResolutio
     }
 
     /*
-     * Init frame for Decode
+     * Init frame for camea stream Decode
      */
     frame = av_frame_alloc();
     if (pkt == NULL) {
@@ -392,6 +433,83 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(QSize frameResolutio
 
     return FFmpegDecode::FFMPEG_OK;
 }
+
+void FFmpegDecode::streamRtp(uint8_t *dstFrame)
+{
+    int ret = 0;
+    static uint32_t pts = 0;
+    int i, x, y;
+
+    while(av_read_frame(rxStreamContext, pkt) >= 0) { // read packet (NOT FRAME !!) from the camera stream
+        if (pkt->stream_index == videoStreamInd) {
+            ret  = avcodec_send_packet(codecDecodeContext, pkt); // send (pass) packet (ecncoded video data from camera) to the codec driver
+            if (ret < 0) {
+                qDebug()<<"Error submitting a packet for decoding"<<av_err2str(ret);
+                return; //FFmpegDecode::FFMPEG_OK;
+            }
+            if (avcodec_receive_frame(codecDecodeContext, frame) == 0) { // take decode camera frame
+                //qDebug()<<"Is open" << avcodec_is_open(codecEncodeContext);
+
+                /*
+                 * The HD264 encoder expected strongly YUV420 input format with the frame rezolution equal to the
+                 * encoder context. We set target camera rezolution upper. But we can't set
+                 * the format of the camera output (typicaly linux return V4l2 stream). That is why if the farame format is not the YUV420, we must
+                 * convert it to YUV420.
+                 */
+                if (frame->format != AV_PIX_FMT_YUV420P) {
+                    /*
+                     *  Use the sws_scale library to convert the frame from the input type (in case of linux it is V4l2) to the H264 compatible (YUV420) format.
+                     *  The *scale* meaning change not only size, but also format.
+                     */
+                    SwsContext *swScaleContext = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format,
+                                                                frameEncode->width, frameEncode->height, (AVPixelFormat)frameEncode->format,
+                                                                0, NULL, NULL, NULL);
+                    if ((ret = sws_scale_frame(swScaleContext, frameEncode, frame)) < 0) {
+                        qDebug()<<"Convert frame error";
+                        return;
+                    }
+                }
+
+                /*
+                 * cope frame for external code
+                 */
+                memcpy(dstFrame, frameEncode->data[0], frameEncode->width * frameEncode->height);
+
+
+                frameEncode->pts = pts++;
+
+                /*
+                 * Encode YUV420 frame to the H264 packet
+                 * Usualy ffmpeg use two call to encode: send_frame, receive_packet
+                 */
+                ret = avcodec_send_frame(codecEncodeContext, frameEncode);
+                if (ret < 0) {
+                    qDebug() <<"Error sending a frame to the encoder: "<<av_err2str(ret)<< "   " <<frameEncode->pts<<frameEncode;
+                }
+                while (ret >= 0) {
+                    ret = avcodec_receive_packet(codecEncodeContext, pktEncode);
+                    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+                        return;
+                    else if (ret < 0) {
+                        fprintf(stderr, "Error during encoding\n");
+                        exit(1);
+                    }
+                    ret = av_interleaved_write_frame(txRtpStreamContext, pktEncode);
+                    if(ret < 0) {
+                        qDebug()<<"Send frame error";
+                        FFMPEG_ERROR(ret);
+                        //return FFmpegDecode::FFMPEG_RTP_OPEN_STREAM_ERROR;
+                    }
+                    av_packet_unref(pktEncode);
+                }
+                break;
+            }
+        }
+    }
+    return;// FFmpegDecode::FFMPEG_OK;
+}
+
+
 
 void FFmpegDecode::encode(uint8_t *dstFrame)
 {
