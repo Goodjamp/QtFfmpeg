@@ -7,14 +7,14 @@
 #include <QFile>
 #include <QMap>
 
-
-
 extern "C" {
     #include <stdint.h>
     #include <stdio.h>
     #include "libavcodec/avcodec.h"
+    #include "libavformat/avformat.h"
     #include "libavdevice/avdevice.h"
     #include "libavutil/avutil.h"
+    #include "libavutil/mathematics.h"
     #include "libswscale/swscale.h"
 }
 
@@ -114,6 +114,7 @@ private:
     FFmpegDecode::FFmpegStatus openDecoder();
     FFmpegDecode::FFmpegStatus openInputCameraStream(QSize frameRezolution);
     FFmpegDecode::FFmpegStatus openOutputRtpStream(const char *url);
+    void generateSdp();
 
 };
 
