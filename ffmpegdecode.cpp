@@ -233,7 +233,9 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QSt
  */
 FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(QSize frameResolution)
 {
-    const char *url = "rtp://127.0.0.1:5004";
+    //const char *url = "rtp://192.168.31.82:5004";
+    const char *url = "rtp://192.168.31.217:5004";
+    //const char *url = "rtp://127.0.0.1:5004";
     int result;
     FFmpegStatus ffmpegResult;
 
@@ -296,7 +298,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(QSize frameResolutio
         qDebug()<<"Could not allocate the video frame data";
         return FFmpegDecode::FFMPEG_FRAME_GET_BUFF_ERROR;
     }
-    qDebug()<<"stream time base (set)                                                  : "<<txRtpStreamContext->streams[0]->time_base.num<<"/"<<txRtpStreamContext->streams[0]->time_base.den;
+
     return FFmpegDecode::FFMPEG_OK;
 }
 
@@ -356,15 +358,19 @@ FFmpegDecode::FFmpegStatus FFmpegDecode:: openEncoder(QSize frameResolution)
     codecEncodeContext->bit_rate = 400000;
     codecEncodeContext->time_base = (AVRational){1, 30}; // It is a base time unit for the encoder: 1/30 of the seconds OR 1000 / 30 ms. In this units wil ba calculate frame->pts and frame dts
     codecEncodeContext->framerate = (AVRational){30, 1};
-    codecEncodeContext->gop_size = 2;
+    codecEncodeContext->gop_size = 12;
     codecEncodeContext->max_b_frames = 0;
     codecEncodeContext->pix_fmt = AV_PIX_FMT_YUV420P;
 
     /*
      * Apply one of the standart preset for the HD. This preset desribe at the HD264 standart
+     *
+     * I selected the settings to provide minimum latency on the encoding process
      */
     if (codecEncode->id == AV_CODEC_ID_H264) {
-        av_opt_set(codecEncodeContext->priv_data, "preset", "slow", 0);
+        av_opt_set(codecEncodeContext->priv_data, "preset", "ultrafast", 0);
+        av_opt_set(codecEncodeContext->priv_data, "tune", "zerolatency", 0);
+        av_opt_set_int(codecEncodeContext->priv_data, "buffsize", 10000, 0);
     }
 
     /*
@@ -416,6 +422,8 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::openOutputRtpStream(const char *url)
      * avformat_new_stream - create stream and return reherence to stream handler from the contest!!
      */
     txRtpStream = avformat_new_stream(txRtpStreamContext, NULL);
+    av_opt_set(txRtpStreamContext, "rtpflags", "send_immediately", 0);
+    av_opt_set(txRtpStreamContext, "rtpflags", "nobuffer", 0);
 
     /* codecEncodeContext - it is a context of encoder.
      * Apply encoder parametrs (encoder was initilise upper on the method *openEncoder*) for the stream properties.
@@ -543,10 +551,10 @@ void FFmpegDecode::streamRtp(uint8_t *dstFrame)
                     pktEncode->duration = 3000;//av_rescale(codecEncodeContext->framerate, codecEncodeContext->time_base, txRtpStreamContext->streams[0]->time_base);;
                     pktEncode->pts = av_rescale_q(pktEncode->pts, codecEncodeContext->time_base, txRtpStreamContext->streams[0]->time_base);
                     pktEncode->dts = av_rescale_q(pktEncode->dts, codecEncodeContext->time_base, txRtpStreamContext->streams[0]->time_base);
-                    qDebug()<<"paket pts: "<<pktEncode->pts;
-                    qDebug()<<"stream time base: "<<txRtpStreamContext->streams[0]->time_base.num<<"/"<<txRtpStreamContext->streams[0]->time_base.den;
-                    qDebug()<<"paket position: "<<pktEncode->pos;
-                    qDebug()<<"paket duration: "<<pktEncode->duration;
+                    //qDebug()<<"paket pts: "<<pktEncode->pts;
+                    //qDebug()<<"stream time base: "<<txRtpStreamContext->streams[0]->time_base.num<<"/"<<txRtpStreamContext->streams[0]->time_base.den;
+                    //qDebug()<<"paket position: "<<pktEncode->pos;
+                    //qDebug()<<"paket duration: "<<pktEncode->duration;
                     //qDebug()<<"paket time base num: "<<pktEncode->time_base.num;
                     //avformat_write_header(txRtpStreamContext, NULL);
                     ret = av_interleaved_write_frame(txRtpStreamContext, pktEncode);
