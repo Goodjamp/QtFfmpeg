@@ -8,16 +8,17 @@ extern "C" {
 
 #define INBUF_SIZE 4096
 
+
+#define FFMPEG_ERROR(err)                          \
+    if ((err) < 0) {                               \
+       char errBuff[152];                          \
+       av_strerror(err, errBuff, sizeof(errBuff)); \
+       qDebug()<<errBuff;                          \
+    }
+
 void logCb(void* ptr, int logLevel, const char* errorStr, va_list vaList)
 {
     qDebug()<<errorStr;
-}
-
-void handleError(int errCode)
-{
-    char errStr[AV_ERROR_MAX_STRING_SIZE];
-    av_strerror(errCode, errStr, sizeof(errStr));
-    qDebug()<<"ERROR: "<<errStr;
 }
 
 FFmpegDecode::FFmpegDecode(QObject *parent) : QObject(parent)
@@ -34,7 +35,6 @@ const char *FFmpegDecode::getFfmpegInfo()
 
 /*
  * CB function to set the desirable output frame format
- * Let's it will be YUV420
  */
 enum AVPixelFormat getFormat(struct AVCodecContext *s, const enum AVPixelFormat *fmt)
 {
@@ -53,17 +53,18 @@ enum AVPixelFormat getFormat(struct AVCodecContext *s, const enum AVPixelFormat 
 }
 
 /*
- * Typicaly linux returb v4l2 video stream
+ * Open camera video stream by the camera-device path.
+ * Typicaly linux return the v4l2 video stream
  */
-FFmpegDecode::FFmpegStatus FFmpegDecode::openInputCameraStream(QSize frameResolution)
+FFmpegDecode::FFmpegStatus FFmpegDecode::openInputCameraStream(QSize frameResolution, int frameRate, QString cameraPath)
 {
     std::string resolution = (QString::number(frameResolution.width()) + "x" + QString::number(frameResolution.height())).toStdString();
 
     inputFormat = av_find_input_format("v4l2"); // video for linux (v4l2) camera outputformat
-    av_dict_set(&dictionaryOptions, "framerate", "30", 0);
+    av_dict_set(&dictionaryOptions, "framerate", QString::number(frameRate).toStdString().c_str(), 0);
     av_dict_set(&dictionaryOptions, "video_size", resolution.c_str(),  0);
 
-    if (avformat_open_input(&rxStreamContext, cameraPath, inputFormat, &dictionaryOptions) != 0 ) {
+    if (avformat_open_input(&rxStreamContext, cameraPath.toStdString().c_str(), inputFormat, &dictionaryOptions) != 0 ) {
         qDebug()<<"Can't connect camera";
         return FFmpegDecode::FFMPEG_OPEN_INPUT_PATH_STREAM_ERROR;
     } else {
@@ -77,13 +78,6 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::openInputCameraStream(QSize frameResolu
 
     return FFmpegDecode::FFMPEG_OK;
 }
-
-#define FFMPEG_ERROR(err)                          \
-    if ((err) < 0) {                               \
-       char errBuff[152];                          \
-       av_strerror(err, errBuff, sizeof(errBuff)); \
-       qDebug()<<errBuff;                          \
-    }
 
 void FFmpegDecode::generateSdp()
 {
@@ -148,18 +142,17 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::openDecoder()
     return FFmpegDecode::FFMPEG_OK;
 }
 
-
 /*
  * The method is:
- * - capture the video stream from the Web camera
+ * - capture the video stream from the camera
  * - decode it to the frame
- * - - show freame on the screen
+ * - - show frame on the screen
  * - encode frame to the HD264 stream
  * - save stream to the output file
  */
-FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QString outFileName)
+FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(Properties properties)
 {
-    QFile outFile(outFileName);
+    QFile outFile(properties.outUrl);
     outFile.open(QIODevice::ReadWrite);
 
     avdevice_register_all();
@@ -167,9 +160,9 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QSt
     /*
      * To decode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
      */
-    openInputCameraStream(frameResolution);
+    openInputCameraStream(properties.resolution, properties.frameRate, properties.cameraPath);
     openDecoder();
-    openEncoder(frameResolution);
+    openEncoder(properties.resolution);
    /*
      * Init container for the camera stream
      */
@@ -231,10 +224,10 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(QSize frameResolution, QSt
  * - encode frame to the HD264 stream
  * - create RTP server and send stream
  */
-FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(QSize frameResolution)
+FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(Properties properties)
 {
     //const char *url = "rtp://192.168.31.82:5004";
-    const char *url = "rtp://192.168.31.217:5004";
+    //const char *url = "rtp://192.168.31.217:5004";
     //const char *url = "rtp://127.0.0.1:5004";
     int result;
     FFmpegStatus ffmpegResult;
@@ -248,10 +241,10 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(QSize frameResolutio
     /*
      * To decode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
      */
-    openInputCameraStream(frameResolution);
+    openInputCameraStream(properties.resolution, properties.frameRate, properties.cameraPath);
     openDecoder();
-    openEncoder(frameResolution);
-    if ((ffmpegResult = openOutputRtpStream(url)) != FFmpegDecode::FFMPEG_OK) {
+    openEncoder(properties.resolution);
+    if ((ffmpegResult = openOutputRtpStream(properties.outUrl)) != FFmpegDecode::FFMPEG_OK) {
         return ffmpegResult;
     }
 
@@ -390,13 +383,14 @@ FFmpegDecode::FFmpegStatus FFmpegDecode:: openEncoder(QSize frameResolution)
  * Very important!! To call this function firs we need to intit the H264 codec, becouse we copy
  * the custom settings of the codec to the stream settings.
  */
-FFmpegDecode::FFmpegStatus FFmpegDecode::openOutputRtpStream(const char *url)
+FFmpegDecode::FFmpegStatus FFmpegDecode::openOutputRtpStream(QString remoterUrl)
 {
     AVStream *txRtpStream = NULL;
+    const char *remUrl = remoterUrl.toStdString().c_str();
     int result;
 
 
-    result = avformat_alloc_output_context2(&txRtpStreamContext, NULL, "rtp", url);
+    result = avformat_alloc_output_context2(&txRtpStreamContext, NULL, "rtp", remUrl);
     qDebug()<<"URL: "<<txRtpStreamContext->url;
 
     if (result < 0) {
@@ -411,7 +405,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::openOutputRtpStream(const char *url)
         return FFmpegDecode::FFMPEG_RTP_ALLOC_CONTEXT_NULL_ERROR;
     }
 
-    result = avio_open(&txRtpStreamContext->pb, url, AVIO_FLAG_WRITE);
+    result = avio_open(&txRtpStreamContext->pb, remUrl, AVIO_FLAG_WRITE);
     if(result < 0) {
         qDebug()<<"Open rtp video out error";
         FFMPEG_ERROR(result);
@@ -528,17 +522,9 @@ void FFmpegDecode::streamRtp(uint8_t *dstFrame)
                     qDebug() <<"Error sending a frame to the encoder: "<<av_err2str(ret)<< "   " <<frameEncode->pts<<frameEncode;
                 }
 
-
-                //pktEncode->pts = pktEncode->dts = pts;
-                //pktEncode->pos = pts;
-                //pktEncode->duration = 3000;//av_rescale(codecEncodeContext->framerate, codecEncodeContext->time_base, txRtpStreamContext->streams[0]->time_base);;
-                //pktEncode->pts = av_rescale_q(pktEncode->pts, codecEncodeContext->time_base, txRtpStreamContext->streams[0]->time_base);
-                // pktEncode->dts = av_rescale_q(pktEncode->dts, codecEncodeContext->time_base, txRtpStreamContext->streams[0]->time_base);
-
                 while (ret >= 0) {
                     ret = avcodec_receive_packet(codecEncodeContext, pktEncode);
                     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-                        //handleError(ret);
                         return;
                     } else if (ret < 0) {
                         fprintf(stderr, "Error during encoding\n");
@@ -744,7 +730,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::filePlay()
     return FFmpegDecode::FFMPEG_OK;
 }
 
-FFmpegDecode::FFmpegStatus FFmpegDecode::camerraPlay(QSize frameResolution)
+FFmpegDecode::FFmpegStatus FFmpegDecode::camerraPlay(Properties properties)
 {
     avdevice_register_all();
 
@@ -752,7 +738,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::camerraPlay(QSize frameResolution)
      * To decode the camera stream we need to now the pixel format that will be return the decoder. So that, first we need to find decoder for the camera stream
      */
 
-    openInputCameraStream(frameResolution);
+    openInputCameraStream(properties.resolution, properties.frameRate, properties.cameraPath);
     openDecoder();
 
     pkt = av_packet_alloc();

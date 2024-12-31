@@ -52,12 +52,20 @@ typedef enum {
         FFMPEG_ALLOCATE_FRAME_ERROR,
     } FFmpegStatus;
 
+    typedef struct {
+        QSize resolution;
+        int frameRate;
+        QString cameraPath;
+        QString inUrl;
+        QString outUrl;
+    } Properties;
+
     explicit FFmpegDecode(QObject *parent = nullptr);
     const char *getFfmpegInfo();
-    FFmpegStatus camerraPlay(QSize frameResolution);
+    FFmpegStatus camerraPlay(Properties properties);
     FFmpegStatus filePlay();
-    FFmpegStatus cameraRecord(QSize frameResolution, QString outFileName);
-    FFmpegStatus cameraSreamNetwork(QSize frameResolution);
+    FFmpegStatus cameraRecord(Properties properties );
+    FFmpegStatus cameraSreamNetwork(Properties properties );
     void stopVideo();
 
 
@@ -112,8 +120,8 @@ private:
 
     FFmpegDecode::FFmpegStatus openEncoder(QSize frameResolution);
     FFmpegDecode::FFmpegStatus openDecoder();
-    FFmpegDecode::FFmpegStatus openInputCameraStream(QSize frameRezolution);
-    FFmpegDecode::FFmpegStatus openOutputRtpStream(const char *url);
+    FFmpegDecode::FFmpegStatus openInputCameraStream(QSize frameResolution, int frameRate, QString cameraPath);
+    FFmpegDecode::FFmpegStatus openOutputRtpStream(QString remoterUrl);
     void generateSdp();
 
 };

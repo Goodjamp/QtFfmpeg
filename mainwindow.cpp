@@ -83,8 +83,15 @@ MainWindow::~MainWindow()
 
 void MainWindow::pbCameraPlayClick(bool click)
 {
+    FFmpegDecode::Properties properties = {
+        QSize{320,240},
+        30,
+        "",
+        "/home/oleksandr/camera.mpg4"
+    };
+
     activityType = CAMERA_PLAY;
-    decodeItem->camerraPlay(QSize(320, 240));
+    decodeItem->camerraPlay(properties);
     lDisplay->resize(decodeItem->getFrameSize());
 
     isRun = true;
@@ -105,8 +112,14 @@ void MainWindow::pbFilePlayClick(bool click)
 
 void MainWindow::pbCameraRecordClick(bool click)
 {
-    qDebug()<<"Init ffmpeg";
-    decodeItem->cameraRecord(QSize(320, 240), "/home/oleksandr/camera.mpg4");
+    FFmpegDecode::Properties properties = {
+        QSize{320,240},
+        30,
+        "",
+        "/home/oleksandr/camera.mpg4"
+    };
+
+    decodeItem->cameraRecord(properties);
     activityType = CAMERA_RECORD;
     //decodeItem->main();
     //lDisplay->resize(decodeItem->getFrameSize());
@@ -118,8 +131,15 @@ void MainWindow::pbCameraRecordClick(bool click)
 
 void MainWindow::pbStreamNetworkClick(bool click)
 {
+    FFmpegDecode::Properties properties = {
+        QSize{320,240},
+        30,
+        "",
+        "/home/oleksandr/camera.mpg4"
+    };
+
     qDebug()<<"Init network stream";
-    decodeItem->cameraSreamNetwork(QSize(320, 240));
+    decodeItem->cameraSreamNetwork(properties);
     activityType = STREAM_NETWORK;
     //decodeItem->main();
     //lDisplay->resize(decodeItem->getFrameSize());
