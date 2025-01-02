@@ -63,7 +63,7 @@ typedef enum {
     explicit FFmpegDecode(QObject *parent = nullptr);
     const char *getFfmpegInfo();
     FFmpegStatus camerraPlay(Properties properties);
-    FFmpegStatus filePlay();
+    FFmpegStatus filePlay(Properties properties);
     FFmpegStatus cameraRecord(Properties properties );
     FFmpegStatus cameraSreamNetwork(Properties properties );
     void stopVideo();

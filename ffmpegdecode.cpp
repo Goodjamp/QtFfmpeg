@@ -152,9 +152,6 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::openDecoder()
  */
 FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(Properties properties)
 {
-    QFile outFile(properties.outUrl);
-    outFile.open(QIODevice::ReadWrite);
-
     avdevice_register_all();
 
     /*
@@ -210,7 +207,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraRecord(Properties properties)
     /*
      * Prepare file to record camera stream
      */
-    cameraRecFile.setFileName(filePath);
+    cameraRecFile.setFileName(properties.outUrl);
     cameraRecFile.open(QIODevice::WriteOnly);
 
     return FFmpegDecode::FFMPEG_OK;
@@ -244,7 +241,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(Properties propertie
     openInputCameraStream(properties.resolution, properties.frameRate, properties.cameraPath);
     openDecoder();
     openEncoder(properties.resolution);
-    if ((ffmpegResult = openOutputRtpStream(properties.outUrl)) != FFmpegDecode::FFMPEG_OK) {
+    if ((ffmpegResult = openOutputRtpStream("rtp://" + properties.outUrl)) != FFmpegDecode::FFMPEG_OK) {
         return ffmpegResult;
     }
 
@@ -253,7 +250,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(Properties propertie
      */
     pkt = av_packet_alloc();
     if (pkt == NULL) {
-        qDebug()<<"Can't allk paket";
+        qDebug()<<"Can't alokate camera paket";
         return FFmpegDecode::FFMPEG_ALLOCATE_PKT_ERROR;
     }
 
@@ -262,7 +259,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(Properties propertie
      */
     frame = av_frame_alloc();
     if (pkt == NULL) {
-        qDebug()<<"Can't allk paket";
+        qDebug()<<"Can't alokate decode frame";
         return FFmpegDecode::FFMPEG_ALLOCATE_FRAME_ERROR;
     }
 
@@ -271,7 +268,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(Properties propertie
      */
     pktEncode = av_packet_alloc();
     if (pkt == NULL) {
-        qDebug()<<"Can't allk paket";
+        qDebug()<<"Can't alokate encode paket";
         return FFmpegDecode::FFMPEG_ALLOCATE_PKT_ERROR;
     }
 
@@ -280,7 +277,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(Properties propertie
      */
     frameEncode = av_frame_alloc();
     if (pkt == NULL) {
-        qDebug()<<"Can't allk paket";
+        qDebug()<<"Can't alokate encode frame";
         return FFmpegDecode::FFMPEG_ALLOCATE_FRAME_ERROR;
     }
     frameEncode->format = codecEncodeContext->pix_fmt;
@@ -288,7 +285,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::cameraSreamNetwork(Properties propertie
     frameEncode->height = codecEncodeContext->height;
 
     if (av_frame_get_buffer(frameEncode, 0) < 0) {
-        qDebug()<<"Could not allocate the video frame data";
+        qDebug()<<"Could not allocate the encode video frame data buffer";
         return FFmpegDecode::FFMPEG_FRAME_GET_BUFF_ERROR;
     }
 
@@ -351,7 +348,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode:: openEncoder(QSize frameResolution)
     codecEncodeContext->bit_rate = 400000;
     codecEncodeContext->time_base = (AVRational){1, 30}; // It is a base time unit for the encoder: 1/30 of the seconds OR 1000 / 30 ms. In this units wil ba calculate frame->pts and frame dts
     codecEncodeContext->framerate = (AVRational){30, 1};
-    codecEncodeContext->gop_size = 12;
+    codecEncodeContext->gop_size = 2;
     codecEncodeContext->max_b_frames = 0;
     codecEncodeContext->pix_fmt = AV_PIX_FMT_YUV420P;
 
@@ -386,11 +383,10 @@ FFmpegDecode::FFmpegStatus FFmpegDecode:: openEncoder(QSize frameResolution)
 FFmpegDecode::FFmpegStatus FFmpegDecode::openOutputRtpStream(QString remoterUrl)
 {
     AVStream *txRtpStream = NULL;
-    const char *remUrl = remoterUrl.toStdString().c_str();
+    std::string remUrl = remoterUrl.toStdString().c_str();
     int result;
 
-
-    result = avformat_alloc_output_context2(&txRtpStreamContext, NULL, "rtp", remUrl);
+    result = avformat_alloc_output_context2(&txRtpStreamContext, NULL, "rtp", remUrl.c_str());
     qDebug()<<"URL: "<<txRtpStreamContext->url;
 
     if (result < 0) {
@@ -405,7 +401,7 @@ FFmpegDecode::FFmpegStatus FFmpegDecode::openOutputRtpStream(QString remoterUrl)
         return FFmpegDecode::FFMPEG_RTP_ALLOC_CONTEXT_NULL_ERROR;
     }
 
-    result = avio_open(&txRtpStreamContext->pb, remUrl, AVIO_FLAG_WRITE);
+    result = avio_open(&txRtpStreamContext->pb, remUrl.c_str(), AVIO_FLAG_WRITE);
     if(result < 0) {
         qDebug()<<"Open rtp video out error";
         FFMPEG_ERROR(result);
@@ -508,7 +504,7 @@ void FFmpegDecode::streamRtp(uint8_t *dstFrame)
                 /*
                  * Copy the grayscale part of the picture to the external buffer
                  */
-                memcpy(dstFrame, frameEncode->data[0], frameEncode->width * frameEncode->height);
+                //memcpy(dstFrame, frameEncode->data[0], frameEncode->width * frameEncode->height);
 
                 frameEncode->pts = pts;
                 pts += duration;
@@ -649,14 +645,17 @@ void FFmpegDecode::stopVideo()
     cameraRecFile.close();
 }
 
-FFmpegDecode::FFmpegStatus FFmpegDecode::filePlay()
+FFmpegDecode::FFmpegStatus FFmpegDecode::filePlay(Properties properties)
 {
     avdevice_register_all();
 
     /*
      * Open source of input data
      */
-    if (avformat_open_input(&rxStreamContext, filePath, NULL, NULL) != 0 ) {
+    qDebug()<<properties.inUrl;
+    std::string filePath = properties.inUrl.toStdString();
+    qDebug()<<filePath.c_str();
+    if (avformat_open_input(&rxStreamContext, "/home/oleksandr/camera.mpg4", NULL, NULL) != 0 ) {
         qDebug()<<"Can't connect file";
         return FFmpegDecode::FFMPEG_OPEN_FILE_ERROR;
     } else {

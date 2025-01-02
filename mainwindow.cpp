@@ -86,8 +86,9 @@ void MainWindow::pbCameraPlayClick(bool click)
     FFmpegDecode::Properties properties = {
         QSize{320,240},
         30,
+        "/dev/video0",
         "",
-        "/home/oleksandr/camera.mpg4"
+        ""
     };
 
     activityType = CAMERA_PLAY;
@@ -101,8 +102,15 @@ void MainWindow::pbCameraPlayClick(bool click)
 
 void MainWindow::pbFilePlayClick(bool click)
 {
+    FFmpegDecode::Properties properties = {
+        QSize{320,240},
+        30,
+        "",
+        "/home/oleksandr/camera.mpg4",
+        ""
+    };
     activityType = FILE_PLAY;
-    decodeItem->filePlay();
+    decodeItem->filePlay(properties);
     lDisplay->resize(decodeItem->getFrameSize());
 
     isRun = true;
@@ -115,6 +123,7 @@ void MainWindow::pbCameraRecordClick(bool click)
     FFmpegDecode::Properties properties = {
         QSize{320,240},
         30,
+        "/dev/video0",
         "",
         "/home/oleksandr/camera.mpg4"
     };
@@ -134,8 +143,9 @@ void MainWindow::pbStreamNetworkClick(bool click)
     FFmpegDecode::Properties properties = {
         QSize{320,240},
         30,
+        "/dev/video0",
         "",
-        "/home/oleksandr/camera.mpg4"
+        "94.158.83.30:5004"
     };
 
     qDebug()<<"Init network stream";
@@ -175,7 +185,7 @@ void MainWindow::readFrameTimeoute()
 
         case STREAM_NETWORK:
             decodeItem->streamRtp(imageBuff);
-            frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
+            //frame = QPixmap::fromImage(QImage(imageBuff, frameSize.width(), frameSize.height(), QImage::Format_Grayscale8));
             break;
         }
 
